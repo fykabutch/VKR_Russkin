@@ -1,7 +1,12 @@
+using Microsoft.EntityFrameworkCore;
+using TeploenergetikaKursovaya.Data;
+using TeploenergetikaKursovaya.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.AddDbContext<TeploDBContext>(o => o.UseSqlite("Data Source = TeploenergetikaKursovaya.db"));
 
 var app = builder.Build();
 
