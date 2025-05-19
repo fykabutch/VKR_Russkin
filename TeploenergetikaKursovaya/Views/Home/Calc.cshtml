@@ -1,0 +1,239 @@
+﻿@using TeploenergetikaKursovaya.Models
+@model CalcViewModel
+@{
+    ViewData["Title"] = "Расчет тепловых потерь";
+}
+
+<h2>Расчет тепловых потерь</h2>
+
+<form asp-action="Calc" method="post" id="calculationForm">
+    <fieldset>
+        <legend>Общие параметры</legend>
+
+        <div class="form-group">
+            <label asp-for="TgasInitial">Начальная температура газа (°C)</label>
+            <input asp-for="TgasInitial" class="form-control" />
+            <span asp-validation-for="TgasInitial" class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="TemperatureLossPerMeter">Теплопотери на метр (°C/м)</label>
+            <input asp-for="TemperatureLossPerMeter" class="form-control" />
+            <span asp-validation-for="TemperatureLossPerMeter" class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="GasFlow">Расход газа (м³/с)</label>
+            <input asp-for="GasFlow" class="form-control" />
+            <span asp-validation-for="GasFlow" class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="MaterialType">Материал трубопровода</label>
+            <select asp-for="MaterialType" class="form-control">
+                @foreach (var m in Model.Materials)
+                {
+                    <option value="@m">@m</option>
+                }
+            </select>
+            <span asp-validation-for="MaterialType" class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="SurfaceCondition">Состояние поверхности</label>
+            <select asp-for="SurfaceCondition" class="form-control">
+                @foreach (var s in Model.SurfaceConditions)
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+            <span asp-validation-for="SurfaceCondition" class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="HeightDifference">Перепад высот (м)</label>
+            <input asp-for="HeightDifference" class="form-control" id="heightDifference"
+                   onchange="toggleHeightDirection(this.value)" />
+            <span asp-validation-for="HeightDifference" class="text-danger"></span>
+        </div>
+
+        <div class="form-group" id="heightDirectionGroup" style="display: none;">
+            <label>Направление перепада высот:</label>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" asp-for="HeightDirection" value="up" id="heightUp">
+                <label class="form-check-label" for="heightUp">Вверх (потери со знаком -)</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" asp-for="HeightDirection" value="down" id="heightDown" checked>
+                <label class="form-check-label" for="heightDown">Вниз</label>
+            </div>
+        </div>
+
+        <h4>Объемные доли компонентов газа:</h4>
+        <div class="form-group">
+            <label asp-for="Y_N2">Азот (N₂):</label>
+            <input asp-for="Y_N2" class="form-control" />
+            <span asp-validation-for="Y_N2" class="text-danger"></span>
+        </div>
+        <div class="form-group">
+            <label asp-for="Y_O2">Кислород (O₂):</label>
+            <input asp-for="Y_O2" class="form-control" />
+            <span asp-validation-for="Y_O2" class="text-danger"></span>
+        </div>
+        <div class="form-group">
+            <label asp-for="Y_CO2">Углекислый газ (CO₂):</label>
+            <input asp-for="Y_CO2" class="form-control" />
+            <span asp-validation-for="Y_CO2" class="text-danger"></span>
+        </div>
+        <div class="form-group">
+            <label asp-for="Y_H2O">Водяной пар (H₂O):</label>
+            <input asp-for="Y_H2O" class="form-control" />
+            <span asp-validation-for="Y_H2O" class="text-danger"></span>
+        </div>
+    </fieldset>
+
+    <hr />
+
+    <fieldset>
+        <legend>Участки трубопровода</legend>
+        <div id="sections">
+            <!-- Секция для первого участка по умолчанию -->
+            <div class="border p-3 mb-3 section-container">
+                <div class="form-group">
+                    <label>Тип участка:</label>
+                    <select name="Sections[0].SectionKind" class="form-control section-kind" onchange="toggleFields(this, 0)">
+                        <option value="Прямой">Прямой участок</option>
+                        <option value="МС">Местное сопротивление</option>
+                    </select>
+                </div>
+
+                <div class="form-group length-field" id="length-0">
+                    <label>Длина участка (м):</label>
+                    <input type="number" step="any" name="Sections[0].Length" class="form-control" required />
+                </div>
+
+                <div class="form-group diameter-field" id="diameter-0">
+                    <label>Диаметр трубопровода (м):</label>
+                    <input type="number" step="any" name="Sections[0].Diameter" class="form-control" required />
+                </div>
+
+                <div class="form-group lr-type-field" id="lrtype-0" style="display: none;">
+                    <label>Тип местного сопротивления:</label>
+                    <select name="Sections[0].LocalResistanceType" class="form-control">
+                        @foreach (var type in Model.LocalResistanceTypes)
+                        {
+                            <option value="@type">@type</option>
+                        }
+                    </select>
+                </div>
+
+                <button type="button" class="btn btn-danger btn-sm remove-section" style="display: none;">Удалить</button>
+            </div>
+        </div>
+        <button type="button" class="btn btn-secondary" id="addSectionBtn">Добавить участок</button>
+    </fieldset>
+
+    <hr />
+    <button type="submit" class="btn btn-primary">Рассчитать</button>
+</form>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let sectionIndex = 1;
+            const container = document.getElementById('sections');
+            const addSectionBtn = document.getElementById('addSectionBtn');
+
+            // Инициализация направления высот
+            toggleHeightDirection(document.getElementById('heightDifference').value);
+
+            // Обработчик для кнопки добавления участка
+            addSectionBtn.addEventListener('click', function() {
+                const newSection = document.createElement('div');
+                newSection.classList.add('border', 'p-3', 'mb-3', 'section-container');
+
+                // Получаем HTML для опций местных сопротивлений
+                const lrOptions = document.querySelector('select[name="Sections[0].LocalResistanceType"]').innerHTML;
+
+                newSection.innerHTML = `
+                    <div class="form-group">
+                        <label>Тип участка:</label>
+                        <select name="Sections[${sectionIndex}].SectionKind" class="form-control section-kind" onchange="toggleFields(this, ${sectionIndex})">
+                            <option value="Прямой">Прямой участок</option>
+                            <option value="МС">Местное сопротивление</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group length-field" id="length-${sectionIndex}">
+                        <label>Длина участка (м):</label>
+                        <input type="number" step="any" name="Sections[${sectionIndex}].Length" class="form-control" required />
+                    </div>
+
+                    <div class="form-group diameter-field" id="diameter-${sectionIndex}">
+                        <label>Диаметр трубопровода (м):</label>
+                        <input type="number" step="any" name="Sections[${sectionIndex}].Diameter" class="form-control" required />
+                    </div>
+
+                    <div class="form-group lr-type-field" id="lrtype-${sectionIndex}" style="display: none;">
+                        <label>Тип местного сопротивления:</label>
+                        <select name="Sections[${sectionIndex}].LocalResistanceType" class="form-control">
+                            ${lrOptions}
+                        </select>
+                    </div>
+
+                    <button type="button" class="btn btn-danger btn-sm remove-section">Удалить</button>
+                `;
+
+                container.appendChild(newSection);
+
+                // Добавляем обработчик для новой кнопки удаления
+                newSection.querySelector('.remove-section').addEventListener('click', function() {
+                    newSection.remove();
+                });
+
+                sectionIndex++;
+            });
+
+            // Глобальная функция для переключения полей
+            window.toggleFields = function(select, index) {
+                const section = select.closest('.section-container');
+                const lengthField = section.querySelector('.length-field');
+                const diameterField = section.querySelector('.diameter-field');
+                const lrTypeField = section.querySelector('.lr-type-field');
+                const removeBtn = section.querySelector('.remove-section');
+
+                if (select.value === "Прямой") {
+                    lengthField.style.display = "block";
+                    diameterField.style.display = "block";
+                    lrTypeField.style.display = "none";
+                    removeBtn.style.display = "none";
+                } else {
+                    lengthField.style.display = "none";
+                    diameterField.style.display = "block"; // Показываем диаметр для местного сопротивления
+                    lrTypeField.style.display = "block";
+                    removeBtn.style.display = "block";
+                }
+            };
+
+            // Функция для показа/скрытия выбора направления перепада высот
+            window.toggleHeightDirection = function(value) {
+                const directionGroup = document.getElementById('heightDirectionGroup');
+                if (parseFloat(value) !== 0) {
+                    directionGroup.style.display = 'block';
+                    // Устанавливаем значение по умолчанию, если ничего не выбрано
+                    if (!document.querySelector('input[name="HeightDirection"]:checked')) {
+                        document.getElementById('heightDown').checked = true;
+                    }
+                } else {
+                    directionGroup.style.display = 'none';
+                }
+            };
+
+            // Инициализация полей для первого участка
+            const firstSectionKind = document.querySelector('select.section-kind');
+            if (firstSectionKind) {
+                toggleFields(firstSectionKind, 0);
+            }
+        });
+    </script>
+}

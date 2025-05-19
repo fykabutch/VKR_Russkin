@@ -1,20 +1,68 @@
-﻿@model TeploenergetikaKursovaya.Models.CalcResultsViewModel
+﻿@model TeploenergetikaKursovaya.Models.CalcPageViewModel
+
 @{
     ViewData["Title"] = "Результаты расчета";
 }
 
-<div class="container mt-5">
-    <div class="card shadow">
-        <div class="card-header bg-success text-white">
-            <h2 class="text-center">Результаты расчета</h2>
+<div class="container mt-4">
+    <h2 class="text-center mb-4">Результаты расчета по участкам</h2>
+
+    @if (Model.Results != null && Model.Results.Any())
+    {
+        <table class="table table-bordered table-striped">
+            <thead class="table-success">
+                <tr>
+                    <th>Участок</th>
+                    <th>Средняя температура (°C)</th>
+                    <th>Экв. диаметр (м)</th>
+                    <th>Re</th>
+                    <th>λ</th>
+                    <th>Отн. шероховатость</th>
+                    <th>Плотность газа (кг/м³)</th>
+                    <th>Скорость (м/с)</th>
+                    <th>Потери на трение (Па)</th>
+                    <th>Местные потери (Па)</th>
+                    <th>Геометрические потери (Па)</th>
+                    <th>Σ потерь (Па)</th>
+                    <th>Плотность на входе (кг/м³)</th>
+                    <th>Плотность на выходе (кг/м³)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (int i = 0; i < Model.Results.Count; i++)
+                {
+                    var result = Model.Results[i];
+                    <tr>
+                        <td>@(i + 1)</td>
+                        <td>@result.AverageTemperature.ToString("F1")</td>
+                        <td>@(result.EquivalentDiameter?.ToString("F4") ?? "–")</td>
+                        <td>@(result.Re?.ToString("F0") ?? "–")</td>
+                        <td>@result.Lambda.ToString("F4")</td>
+                        <td>@(result.RelativeRoughness?.ToString("F4") ?? "–")</td>
+                        <td>@result.GasDensity.ToString("F3")</td>
+                        <td>@(result.FlowVelocity?.ToString("F2") ?? "–")</td>
+                        <td>@result.PressureDropFriction.ToString("F2")</td>
+                        <td>@result.PressureDropLocal.ToString("F2")</td>
+                        <td>@result.GeometricPressureDrop.ToString("F2")</td>
+                        <td class="fw-bold">@result.TotalPressureDrop.ToString("F2")</td>
+                        <td>@result.InletDensity.ToString("F3")</td>
+                        <td>@result.OutletDensity.ToString("F3")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="text-center mt-4">
+            <a asp-controller="Home" asp-action="Calc" class="btn btn-secondary">Назад к вводу данных</a>
         </div>
-        <div class="card-body">
-            <div class="alert alert-info">
-                <h4>Средняя температура на участке: @Model.averageTemperature.ToString("F2") °C</h4>
-            </div>
-            <div class="text-center mt-4">
-                <a href="@Url.Action("Index")" class="btn btn-primary">Сделать новый расчет</a>
-            </div>
+    }
+    else
+    {
+        <div class="alert alert-warning text-center">
+            Результаты отсутствуют.
         </div>
-    </div>
+        <div class="text-center">
+            <a asp-controller="Home" asp-action="Calc" class="btn btn-primary">На главную</a>
+        </div>
+    }
 </div>
