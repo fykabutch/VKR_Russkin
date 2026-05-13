@@ -1,68 +1,757 @@
-﻿@model TeploenergetikaKursovaya.Models.CalcPageViewModel
-
+@using System.Globalization
+@using Newtonsoft.Json
+@using TeploenergetikaKursovaya.Models
+@model TeploenergetikaKursovaya.Models.CalcPageViewModel
 @{
-    ViewData["Title"] = "Результаты расчета";
+    ViewData["Title"] = "Итоговый отчет";
+
+    double cumulativeLoss = 0;
+    var rows = Model.Results.Select(result =>
+    {
+        cumulativeLoss += result.TotalPressureDrop;
+        return new
+        {
+            Result = result,
+            CumulativeLoss = cumulativeLoss
+        };
+    }).ToList();
+
+    var totalLoss = Math.Abs(Model.Summary.TotalPressureDrop) < 0.0001 ? 1 : Math.Abs(Model.Summary.TotalPressureDrop);
+    var frictionShare = Math.Abs(Model.Summary.FrictionLoss) / totalLoss * 100;
+    var localShare = Math.Abs(Model.Summary.LocalLoss) / totalLoss * 100;
+    var geometricShare = Math.Abs(Model.Summary.GeometricLoss) / totalLoss * 100;
+
+    var shareRows = new[]
+    {
+        new { Label = "Трение", Value = Math.Abs(Model.Summary.FrictionLoss), Share = frictionShare, Css = "friction", Color = "#a34f3d" },
+        new { Label = "Местные сопротивления", Value = Math.Abs(Model.Summary.LocalLoss), Share = localShare, Css = "local", Color = "#d8a661" },
+        new { Label = "Геометрическая составляющая", Value = Math.Abs(Model.Summary.GeometricLoss), Share = geometricShare, Css = "geometric", Color = "#507f82" }
+    };
+
+    const double chartWidth = 560;
+    const double chartHeight = 240;
+    const double chartPaddingLeft = 42;
+    const double chartPaddingRight = 14;
+    const double chartPaddingTop = 14;
+    const double chartPaddingBottom = 34;
+
+    var plotWidth = chartWidth - chartPaddingLeft - chartPaddingRight;
+    var plotHeight = chartHeight - chartPaddingTop - chartPaddingBottom;
+    var sectionCount = Math.Max(rows.Count, 1);
+    var stepWidth = plotWidth / sectionCount;
+    var barWidth = Math.Max(24, Math.Min(56, stepWidth * 0.58));
+    var maxSectionLoss = Math.Max(rows.Count == 0 ? 0 : rows.Max(row => Math.Abs(row.Result.TotalPressureDrop)), 1);
+    var maxCumulativeLoss = Math.Max(rows.Count == 0 ? 0 : rows.Max(row => Math.Abs(row.CumulativeLoss)), 1);
+
+    string ToInvariant(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    double Normalize(double value, double max) => max <= 0 ? 0 : Math.Abs(value) / max;
+    string GetBarX(int index)
+    {
+        var centerX = chartPaddingLeft + stepWidth * index + stepWidth / 2.0;
+        return ToInvariant(centerX - barWidth / 2.0);
+    }
+
+    string GetBarHeight(double value) => ToInvariant(Normalize(value, maxSectionLoss) * plotHeight);
+    string GetBarY(double value)
+    {
+        var height = Normalize(value, maxSectionLoss) * plotHeight;
+        return ToInvariant(chartPaddingTop + plotHeight - height);
+    }
+
+    string GetPoint(int index, double value)
+    {
+        var x = chartPaddingLeft + (rows.Count == 1 ? plotWidth / 2.0 : stepWidth * index + stepWidth / 2.0);
+        var y = chartPaddingTop + plotHeight - Normalize(value, maxCumulativeLoss) * plotHeight;
+        return $"{ToInvariant(x)},{ToInvariant(y)}";
+    }
+
+    var cumulativePolyline = rows.Count == 0
+        ? string.Empty
+        : string.Join(" ", rows.Select((row, index) => GetPoint(index, row.CumulativeLoss)));
+
+    string DescribeSectionKind(string kind) =>
+        SectionKinds.Normalize(kind) switch
+        {
+            SectionKinds.Straight => "Прямой участок",
+            SectionKinds.Bend => "Поворот",
+            SectionKinds.Contraction => "Сужение",
+            SectionKinds.Expansion => "Расширение",
+            SectionKinds.LocalResistance => "Местное сопротивление",
+            _ => "Элемент"
+        };
+
+    string DescribeCrossSectionShape(string? shape) =>
+        SectionShapeKinds.Translate(shape);
+
+    string GetSizePrefix(string? shape, bool outlet = false)
+    {
+        var normalizedShape = SectionShapeKinds.Normalize(shape);
+        return normalizedShape == SectionShapeKinds.Rectangle
+            ? (outlet ? "a×b вых" : "a×b вх")
+            : (outlet ? "Dвых" : "Dвх");
+    }
+
+    string FormatSectionSize(string? shape, double? sizeA, double? sizeB)
+    {
+        if (!sizeA.HasValue)
+        {
+            return "—";
+        }
+
+        return SectionShapeKinds.Normalize(shape) == SectionShapeKinds.Rectangle
+            ? $"{sizeA.Value:F3} × {(sizeB ?? sizeA).Value:F3}"
+            : sizeA.Value.ToString("F3");
+    }
+
+    string UnitLabel(string? unit) =>
+        unit switch
+        {
+            "k" => "K",
+            "m3h" => "м³/ч",
+            "mm" => "мм",
+            "percent" => "%",
+            "cTotal" => "°C всего",
+            "cPerM" => "°C/м",
+            "rad" => "рад",
+            "deg" => "°",
+            "fraction" => "доля",
+            _ => unit == "m3s" ? "м³/с" : unit == "m" ? "м" : "°C"
+        };
+
+    double ConvertFromBase(double value, string baseUnit, string? displayUnit) =>
+        (baseUnit, displayUnit) switch
+        {
+            ("c", "k") => value + 273.15,
+            ("m3s", "m3h") => value * 3600,
+            ("m", "mm") => value * 1000,
+            ("deg", "rad") => value * Math.PI / 180.0,
+            ("fraction", "percent") => value * 100,
+            _ => value
+        };
+
+    string FormatDisplay(double? value, string baseUnit, string? displayUnit, int digits)
+    {
+        if (!value.HasValue)
+        {
+            return "—";
+        }
+
+        var converted = ConvertFromBase(value.Value, baseUnit, displayUnit);
+        return $"{converted.ToString($"F{digits}")} {UnitLabel(displayUnit)}";
+    }
+
+    string FormatSectionDimension(double? value, string? unit) =>
+        FormatDisplay(value, "m", unit, unit == "mm" ? 1 : 3);
+
+    string FormatSectionSizeWithUnits(string? shape, double? sizeA, double? sizeB, string? unitA, string? unitB)
+    {
+        if (!sizeA.HasValue)
+        {
+            return "—";
+        }
+
+        if (SectionShapeKinds.Normalize(shape) == SectionShapeKinds.Rectangle)
+        {
+            return $"{FormatSectionDimension(sizeA, unitA)} × {FormatSectionDimension(sizeB ?? sizeA, unitB)}";
+        }
+
+        return FormatSectionDimension(sizeA, unitA);
+    }
+
+    string FormatHeatLoss(SectionInput section)
+    {
+        var perMeter = section.TemperatureLossPerMeter ?? Model.Input.TemperatureLossPerMeter;
+        if (section.TemperatureLossUnit == "cTotal")
+        {
+            var total = perMeter * (section.Length ?? 0);
+            return $"{total:F2} °C всего";
+        }
+
+        return $"{perMeter:F3} °C/м";
+    }
+
+    string DescribeRouteParameters(SectionInput section)
+    {
+        var parts = new List<string>();
+        var kind = SectionKinds.Normalize(section.SectionKind);
+        var shape = SectionShapeKinds.Normalize(section.CrossSectionShape);
+
+        parts.Add($"Форма {DescribeCrossSectionShape(shape).ToLowerInvariant()}");
+
+        if (section.Diameter.HasValue)
+        {
+            parts.Add($"{GetSizePrefix(shape)} {FormatSectionSizeWithUnits(shape, section.Diameter, section.DiameterB, section.DiameterUnit, section.DiameterBUnit)}");
+        }
+
+        if ((kind == SectionKinds.Contraction || kind == SectionKinds.Expansion) && section.OutletDiameter.HasValue)
+        {
+            var outletShape = SectionShapeKinds.Normalize(section.OutletCrossSectionShape);
+            parts.Add($"{GetSizePrefix(outletShape, outlet: true)} {FormatSectionSizeWithUnits(outletShape, section.OutletDiameter, section.OutletDiameterB, section.OutletDiameterUnit, section.OutletDiameterBUnit)}");
+        }
+
+        if (kind == SectionKinds.Straight && section.Length.HasValue)
+        {
+            parts.Add($"L {FormatSectionDimension(section.Length, section.LengthUnit)}");
+        }
+
+        parts.Add($"ΔT {FormatHeatLoss(section)}");
+
+        if (kind == SectionKinds.Bend && section.TurnAngle.HasValue)
+        {
+            parts.Add($"Угол {section.TurnAngle.Value:F0}°");
+        }
+
+        if (kind == SectionKinds.LocalResistance)
+        {
+            if (section.UseCustomLRC && section.CustomLRC.HasValue)
+            {
+                parts.Add($"ζ {section.CustomLRC.Value:F3}");
+            }
+            else if (!string.IsNullOrWhiteSpace(section.LocalResistanceType))
+            {
+                parts.Add(section.LocalResistanceType!);
+                if (section.LocalResistanceParamX.HasValue && section.LocalResistanceParamY.HasValue)
+                {
+                    if (SectionInput.IsStraightPipeEntrance(section.LocalResistanceType))
+                    {
+                        var ratioB = section.Diameter.HasValue && section.Diameter.Value > 0
+                            ? section.LocalResistanceParamX.Value / section.Diameter.Value
+                            : (double?)null;
+                        var ratioSigma = section.Diameter.HasValue && section.Diameter.Value > 0
+                            ? section.LocalResistanceParamY.Value / section.Diameter.Value
+                            : (double?)null;
+                        parts.Add($"b {FormatSectionDimension(section.LocalResistanceParamX, "m")}; δ₁ {FormatSectionDimension(section.LocalResistanceParamY, "m")}");
+                        if (ratioB.HasValue && ratioSigma.HasValue)
+                        {
+                            parts.Add($"b/Dг {ratioB.Value:F3}; δ₁/Dг {ratioSigma.Value:F3}");
+                        }
+                    }
+                    else
+                    {
+                        parts.Add($"α {section.LocalResistanceParamX.Value:F0}; l/d₀ {section.LocalResistanceParamY.Value:F3}");
+                    }
+                }
+            }
+        }
+
+        if (Math.Abs(section.HeightDelta) > 0.0001)
+        {
+            parts.Add($"ΔH {section.HeightDelta:F2} м");
+        }
+
+        return parts.Count == 0 ? "Параметры будут уточнены в таблице ниже." : string.Join(" · ", parts);
+    }
 }
 
-<div class="container mt-4">
-    <h2 class="text-center mb-4">Результаты расчета по участкам</h2>
+<div class="report-shell print-report">
+    <section class="report-hero">
+        <div>
+            <p class="eyebrow">Итоговый аналитический отчет</p>
+            <h1>Расчет дымовой трассы завершен</h1>
+            <p class="hero-text">
+                В отчете собраны исходные параметры, маршрут пользователя, данные по каждому блоку,
+                сводные показатели системы и рекомендации по снижению потерь давления.
+            </p>
+        </div>
+        <div class="report-actions">
+            @if (Model.SavedCalculationId.HasValue)
+            {
+                <a href="@Url.Action("Calc", new { calculationId = Model.SavedCalculationId })" class="btn btn-outline-primary">Изменить расчет</a>
+                <a href="@Url.Action("Calc", new { repeatCalculationId = Model.SavedCalculationId })" class="btn btn-outline-primary">Повторить расчет</a>
+            }
+            else
+            {
+                <a href="@Url.Action("Calc")" class="btn btn-outline-primary">Вернуться в редактор</a>
+            }
+            @if (!Model.IsAuthenticated)
+            {
+                <button type="button" class="btn btn-outline-primary" id="saveGuestCalculationBtn">Сохранить расчет</button>
+            }
+            <button type="button" class="btn btn-primary" onclick="window.print()">Печать отчета</button>
+        </div>
+    </section>
 
-    @if (Model.Results != null && Model.Results.Any())
+    <section class="report-grid">
+        <div class="panel-block">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">Исходные параметры</p>
+                    <h2>Общие данные расчета</h2>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table modern-table report-data-table">
+                    <tbody>
+                        <tr>
+                            <th>Начальная температура газа</th>
+                            <td>@FormatDisplay(Model.Input.TgasInitial, "c", Model.Input.TgasInitialUnit, 1)</td>
+                            <th>Расход газа (в рабочем состоянии)</th>
+                            <td>@FormatDisplay(Model.Input.GasFlow, "m3s", Model.Input.GasFlowUnit, Model.Input.GasFlowUnit == "m3h" ? 1 : 2)</td>
+                        </tr>
+                        <tr>
+                            <th>Базовый материал</th>
+                            <td>@Model.Input.MaterialType</td>
+                            <th>Состояние поверхности</th>
+                            <td>@Model.Input.SurfaceCondition</td>
+                        </tr>
+                        <tr>
+                            <th>Шероховатость</th>
+                            <td>
+                                @(Model.Input.UseCustomRoughness && Model.Input.CustomRoughness.HasValue
+                                    ? FormatDisplay(Model.Input.CustomRoughness.Value, "m", Model.Input.CustomRoughnessUnit, Model.Input.CustomRoughnessUnit == "mm" ? 3 : 6)
+                                    : "По табличным данным")
+                            </td>
+                            <th>Суммарный перепад высоты</th>
+                            <td>@Model.Summary.TotalHeightChange.ToString("F2") м</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="analysis-card mt-3">
+                <h3>Состав дымовых газов</h3>
+                <p>
+                    N₂: <strong>@FormatDisplay(Model.Input.Y_N2, "fraction", Model.Input.Y_N2Unit, Model.Input.Y_N2Unit == "percent" ? 1 : 3)</strong>,
+                    O₂: <strong>@FormatDisplay(Model.Input.Y_O2, "fraction", Model.Input.Y_O2Unit, Model.Input.Y_O2Unit == "percent" ? 1 : 3)</strong>,
+                    CO₂: <strong>@FormatDisplay(Model.Input.Y_CO2, "fraction", Model.Input.Y_CO2Unit, Model.Input.Y_CO2Unit == "percent" ? 1 : 3)</strong>,
+                    H₂O: <strong>@FormatDisplay(Model.Input.Y_H2O, "fraction", Model.Input.Y_H2OUnit, Model.Input.Y_H2OUnit == "percent" ? 1 : 3)</strong>.
+                </p>
+            </div>
+        </div>
+
+        <div class="panel-block">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">Сводные показатели</p>
+                    <h2>Ключевые параметры системы</h2>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table modern-table report-data-table">
+                    <tbody>
+                        <tr>
+                            <th>Суммарные потери давления</th>
+                            <td>@Model.Summary.TotalPressureDrop.ToString("F1") Па</td>
+                            <th>Потери на трение</th>
+                            <td>@Model.Summary.FrictionLoss.ToString("F1") Па</td>
+                        </tr>
+                        <tr>
+                            <th>Местные сопротивления</th>
+                            <td>@Model.Summary.LocalLoss.ToString("F1") Па</td>
+                            <th>Геометрическая составляющая</th>
+                            <td>@Model.Summary.GeometricLoss.ToString("F1") Па</td>
+                        </tr>
+                        <tr>
+                            <th>Протяженность трассы</th>
+                            <td>@Model.Summary.TotalRouteLength.ToString("F2") м</td>
+                            <th>Максимальная скорость газа</th>
+                            <td>@Model.Summary.MaxVelocity.ToString("F2") м/с</td>
+                        </tr>
+                        <tr>
+                            <th>Критический элемент</th>
+                            <td>@Model.Summary.CriticalSectionName</td>
+                            <th>Учет геометрического давления</th>
+                            <td>@(Model.Input.UseGeometricPressure ? "Включен" : "Не включен")</td>
+                        </tr>
+                        <tr>
+                            <th>Оценка эффективности</th>
+                            <td colspan="3">@Model.Summary.EfficiencyLabel</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    @if (Model.Input.UseGeometricPressure)
     {
-        <table class="table table-bordered table-striped">
-            <thead class="table-success">
-                <tr>
-                    <th>Участок</th>
-                    <th>Средняя температура (°C)</th>
-                    <th>Экв. диаметр (м)</th>
-                    <th>Re</th>
-                    <th>λ</th>
-                    <th>Отн. шероховатость</th>
-                    <th>Плотность газа (кг/м³)</th>
-                    <th>Скорость (м/с)</th>
-                    <th>Потери на трение (Па)</th>
-                    <th>Местные потери (Па)</th>
-                    <th>Геометрические потери (Па)</th>
-                    <th>Σ потерь (Па)</th>
-                    <th>Плотность на входе (кг/м³)</th>
-                    <th>Плотность на выходе (кг/м³)</th>
-                </tr>
-            </thead>
-            <tbody>
-                @for (int i = 0; i < Model.Results.Count; i++)
+        <section class="panel-block geometry-pressure-panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">Учет геометрического давления</p>
+                    <h2>Результаты блока</h2>
+                </div>
+            </div>
+
+            <div class="geometry-pressure-grid">
+                <div class="geometry-pressure-card">
+                    <span>Температура наружного воздуха</span>
+                    <strong>@FormatDisplay(Model.Input.AmbientAirTemperature, "c", Model.Input.AmbientAirTemperatureUnit, 1)</strong>
+                    <p>Значение использовано для расчета плотности воздуха.</p>
+                </div>
+                <div class="geometry-pressure-card">
+                    <span>Плотность наружного воздуха</span>
+                    <strong>@Model.Summary.AmbientAirDensity.ToString("F3") кг/м³</strong>
+                    <p>При заданной температуре и давлении 101.325 кПа.</p>
+                </div>
+                <div class="geometry-pressure-card">
+                    <span>Нивелирная разность высот</span>
+                    <strong>@Model.Summary.TotalHeightChange.ToString("F2") м</strong>
+                    <p>Положительное значение соответствует конечной точке выше начальной.</p>
+                </div>
+                <div class="geometry-pressure-card">
+                    <span>ΔPгеом</span>
+                    <strong>@Model.Summary.GeometricLoss.ToString("F1") Па</strong>
+                    <p>Это значение входит в суммарные потери давления.</p>
+                </div>
+            </div>
+
+            <div class="geometry-pressure-note">
+                @if (Math.Abs(Model.Summary.TotalHeightChange) < 0.0001)
                 {
-                    var result = Model.Results[i];
-                    <tr>
-                        <td>@(i + 1)</td>
-                        <td>@result.AverageTemperature.ToString("F1")</td>
-                        <td>@(result.EquivalentDiameter?.ToString("F4") ?? "–")</td>
-                        <td>@(result.Re?.ToString("F0") ?? "–")</td>
-                        <td>@result.Lambda.ToString("F4")</td>
-                        <td>@(result.RelativeRoughness?.ToString("F4") ?? "–")</td>
-                        <td>@result.GasDensity.ToString("F3")</td>
-                        <td>@(result.FlowVelocity?.ToString("F2") ?? "–")</td>
-                        <td>@result.PressureDropFriction.ToString("F2")</td>
-                        <td>@result.PressureDropLocal.ToString("F2")</td>
-                        <td>@result.GeometricPressureDrop.ToString("F2")</td>
-                        <td class="fw-bold">@result.TotalPressureDrop.ToString("F2")</td>
-                        <td>@result.InletDensity.ToString("F3")</td>
-                        <td>@result.OutletDensity.ToString("F3")</td>
-                    </tr>
+                    <p>H = 0: конечная и начальная отметки совпадают, геометрическое давление не учитывается.</p>
+                    <p>Подъемы и спуски на одинаковую высоту взаимно компенсируются.</p>
                 }
-            </tbody>
-        </table>
+                else if (Model.Summary.TotalHeightChange > 0)
+                {
+                    <p>H = @Model.Summary.TotalHeightChange.ToString("F2") м: конечная точка выше начальной.</p>
+                    <p>Горячие газы движутся вверх, поэтому ΔPгеом идет со знаком минус и уменьшает общее сопротивление.</p>
+                }
+                else
+                {
+                    <p>H = @Model.Summary.TotalHeightChange.ToString("F2") м: конечная точка ниже начальной.</p>
+                    <p>Горячие газы движутся вниз, поэтому ΔPгеом идет со знаком плюс и увеличивает общее сопротивление.</p>
+                }
+            </div>
+        </section>
+    }
 
-        <div class="text-center mt-4">
-            <a asp-controller="Home" asp-action="Calc" class="btn btn-secondary">Назад к вводу данных</a>
+    <section class="panel-block">
+        <div class="panel-head">
+            <div>
+                <p class="panel-kicker">Графики</p>
+                <h2>Сводные показатели по трассе</h2>
+            </div>
         </div>
-    }
-    else
-    {
-        <div class="alert alert-warning text-center">
-            Результаты отсутствуют.
+
+        <div class="chart-grid">
+            <article class="chart-card">
+                <h3>Структура потерь давления</h3>
+                <div class="loss-bar">
+                    @foreach (var item in shareRows)
+                    {
+                        <span class="loss-segment @item.Css" style="width:@item.Share.ToString("F2", CultureInfo.InvariantCulture)%"></span>
+                    }
+                </div>
+                <div class="chart-legend">
+                    @foreach (var item in shareRows)
+                    {
+                        <div>
+                            <span class="legend-dot @item.Css"></span>
+                            @item.Label: @item.Value.ToString("F1") Па (@item.Share.ToString("F1")%)
+                        </div>
+                    }
+                </div>
+            </article>
+
+            <article class="chart-card">
+                <h3>Потери давления по блокам</h3>
+                @if (rows.Count == 0)
+                {
+                    <p class="muted-text">График появится после расчета хотя бы одного блока.</p>
+                }
+                else
+                {
+                    <svg class="chart-svg" viewBox="0 0 560 240" role="img" aria-label="График потерь давления по блокам">
+                        <line x1="@ToInvariant(chartPaddingLeft)" y1="@ToInvariant(chartPaddingTop)" x2="@ToInvariant(chartPaddingLeft)" y2="@ToInvariant(chartPaddingTop + plotHeight)" />
+                        <line x1="@ToInvariant(chartPaddingLeft)" y1="@ToInvariant(chartPaddingTop + plotHeight)" x2="@ToInvariant(chartPaddingLeft + plotWidth)" y2="@ToInvariant(chartPaddingTop + plotHeight)" />
+                        @for (int i = 0; i < rows.Count; i++)
+                        {
+                            var item = rows[i].Result;
+                            <rect x="@GetBarX(i)"
+                                  y="@GetBarY(item.TotalPressureDrop)"
+                                  width="@ToInvariant(barWidth)"
+                                  height="@GetBarHeight(item.TotalPressureDrop)"
+                                  rx="8"
+                                  fill="#8f3d2e" />
+                            @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft + stepWidth * i + stepWidth / 2.0)}\" y=\"{ToInvariant(chartPaddingTop + plotHeight + 18)}\" text-anchor=\"middle\">{item.SectionNumber}</text>")
+                        }
+                        @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft)}\" y=\"{ToInvariant(chartPaddingTop - 2)}\">Па</text>")
+                    </svg>
+                    <p class="chart-caption">По горизонтали указаны номера блоков в порядке трассы.</p>
+                }
+            </article>
+
+            <article class="chart-card">
+                <h3>Накопленные потери вдоль маршрута</h3>
+                @if (rows.Count == 0)
+                {
+                    <p class="muted-text">График появится после расчета хотя бы одного блока.</p>
+                }
+                else
+                {
+                    <svg class="chart-svg" viewBox="0 0 560 240" role="img" aria-label="График накопленных потерь">
+                        <line x1="@ToInvariant(chartPaddingLeft)" y1="@ToInvariant(chartPaddingTop)" x2="@ToInvariant(chartPaddingLeft)" y2="@ToInvariant(chartPaddingTop + plotHeight)" />
+                        <line x1="@ToInvariant(chartPaddingLeft)" y1="@ToInvariant(chartPaddingTop + plotHeight)" x2="@ToInvariant(chartPaddingLeft + plotWidth)" y2="@ToInvariant(chartPaddingTop + plotHeight)" />
+                        <polyline points="@cumulativePolyline"
+                                  fill="none"
+                                  stroke="#507f82"
+                                  stroke-width="4"
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round" />
+                        @for (int i = 0; i < rows.Count; i++)
+                        {
+                            var point = GetPoint(i, rows[i].CumulativeLoss).Split(',');
+                            <circle cx="@point[0]" cy="@point[1]" r="5" fill="#507f82" />
+                            @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft + stepWidth * i + stepWidth / 2.0)}\" y=\"{ToInvariant(chartPaddingTop + plotHeight + 18)}\" text-anchor=\"middle\">{rows[i].Result.SectionNumber}</text>")
+                        }
+                        @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft)}\" y=\"{ToInvariant(chartPaddingTop - 2)}\">Па</text>")
+                    </svg>
+                    <p class="chart-caption">Линия показывает, как растут потери давления по мере прохождения маршрута.</p>
+                }
+            </article>
         </div>
-        <div class="text-center">
-            <a asp-controller="Home" asp-action="Calc" class="btn btn-primary">На главную</a>
+    </section>
+
+    <section class="panel-block">
+        <div class="panel-head">
+            <div>
+                <p class="panel-kicker">Маршрут пользователя</p>
+                <h2>Построенная схема дымовой трассы</h2>
+            </div>
         </div>
-    }
+
+        <div class="route-visual-strip">
+            @for (int i = 0; i < Model.Input.Sections.Count; i++)
+            {
+                var item = Model.Input.Sections[i];
+                <div class="route-visual-card">
+                    <span class="route-visual-card__step">@(i + 1)</span>
+                    <strong>@item.DisplayTitle(i + 1)</strong>
+                    <small>@DescribeSectionKind(item.SectionKind)</small>
+                    <p>@DescribeRouteParameters(item)</p>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="panel-block">
+        <div class="panel-head">
+            <div>
+                <p class="panel-kicker">Исходные данные маршрута</p>
+                <h2>Параметры, введенные для каждого блока</h2>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table modern-table print-table">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Блок</th>
+                        <th>Тип</th>
+                        <th>Форма сечения</th>
+                        <th>Длина</th>
+                        <th>Теплопотери</th>
+                        <th>Размер вх</th>
+                        <th>Размер вых</th>
+                        <th>Угол</th>
+                        <th>Местное сопротивление</th>
+                        <th>ΔH</th>
+                        <th>Материал блока</th>
+                        <th>Шероховатость</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < Model.Input.Sections.Count; i++)
+                    {
+                        var item = Model.Input.Sections[i];
+                        <tr>
+                            <td>@(i + 1)</td>
+                            <td>@item.DisplayTitle(i + 1)</td>
+                            <td>@DescribeSectionKind(item.SectionKind)</td>
+                            <td>@DescribeCrossSectionShape(item.CrossSectionShape)</td>
+                            <td>@FormatSectionDimension(item.Length, item.LengthUnit)</td>
+                            <td>@FormatHeatLoss(item)</td>
+                            <td>@FormatSectionSizeWithUnits(item.CrossSectionShape, item.Diameter, item.DiameterB, item.DiameterUnit, item.DiameterBUnit)</td>
+                            <td>@FormatSectionSizeWithUnits(item.OutletCrossSectionShape, item.OutletDiameter, item.OutletDiameterB, item.OutletDiameterUnit, item.OutletDiameterBUnit)</td>
+                            <td>@FormatDisplay(item.TurnAngle, "deg", item.TurnAngleUnit, item.TurnAngleUnit == "rad" ? 2 : 0)</td>
+                            <td>
+                                @if (item.UseCustomLRC && item.CustomLRC.HasValue)
+                                {
+                                    <span>ζ = @item.CustomLRC.Value.ToString("F3")</span>
+                                }
+                                else
+                                {
+                                    <span>@(string.IsNullOrWhiteSpace(item.LocalResistanceType) ? "—" : item.LocalResistanceType)</span>
+                                }
+                            </td>
+                            <td>@FormatSectionDimension(item.HeightDelta, item.HeightDeltaUnit)</td>
+                            <td>
+                                @if (item.UseIndividualMaterial)
+                                {
+                                    <span>@item.MaterialType / @item.SurfaceCondition</span>
+                                }
+                                else
+                                {
+                                    <span>Общий материал трассы</span>
+                                }
+                            </td>
+                            <td>
+                                @if (item.UseCustomRoughness && item.CustomRoughness.HasValue)
+                                {
+                                    <span>@FormatDisplay(item.CustomRoughness, "m", item.CustomRoughnessUnit, item.CustomRoughnessUnit == "mm" ? 3 : 6)</span>
+                                }
+                                else
+                                {
+                                    <span>По табличным данным</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel-block">
+        <div class="panel-head">
+            <div>
+                <p class="panel-kicker">Детальный отчет</p>
+                <h2>Результаты расчета по блокам</h2>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table modern-table print-table">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Элемент</th>
+                        <th>Тип</th>
+                        <th>Форма</th>
+                        <th>Размер, м</th>
+                        <th>Dэкв, м</th>
+                        <th>Температура, °C</th>
+                        <th>Скорость, м/с</th>
+                        <th>Re</th>
+                        <th>λ</th>
+                        <th>ζ</th>
+                        <th>ΔPтр, Па</th>
+                        <th>ΔPмс, Па</th>
+                        <th>ΔPгеом, Па</th>
+                        <th>ΔP блока, Па</th>
+                        <th>ΣΔP, Па</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        var item = row.Result;
+                        <tr>
+                            <td>@item.SectionNumber</td>
+                            <td>@item.SectionName</td>
+                            <td>@item.SectionType</td>
+                            <td>
+                                @item.CrossSectionShape
+                                @if (!string.Equals(item.CrossSectionShape, item.OutletCrossSectionShape, StringComparison.Ordinal))
+                                {
+                                    <span> → @item.OutletCrossSectionShape</span>
+                                }
+                            </td>
+                            <td>
+                                @FormatSectionSize(item.CrossSectionShape, item.Diameter, item.DiameterB)
+                                @if (Math.Abs(item.OutletDiameter - item.Diameter) > 0.0001 ||
+                                     Math.Abs(item.OutletDiameterB - item.DiameterB) > 0.0001)
+                                {
+                                    <span>→ @FormatSectionSize(item.OutletCrossSectionShape, item.OutletDiameter, item.OutletDiameterB)</span>
+                                }
+                            </td>
+                            <td>
+                                @item.EquivalentDiameter.ToString("F3")
+                                @if (Math.Abs(item.OutletEquivalentDiameter - item.EquivalentDiameter) > 0.0001)
+                                {
+                                    <span>→ @item.OutletEquivalentDiameter.ToString("F3")</span>
+                                }
+                            </td>
+                            <td>@item.AverageTemperature.ToString("F1")</td>
+                            <td>@item.FlowVelocity.ToString("F2")</td>
+                            <td>@item.Re.ToString("F0")</td>
+                            <td>@item.Lambda.ToString("F4")</td>
+                            <td>@item.Zeta.ToString("F3")</td>
+                            <td>@item.PressureDropFriction.ToString("F1")</td>
+                            <td>@item.PressureDropLocal.ToString("F1")</td>
+                            <td>@item.GeometricPressureDrop.ToString("F1")</td>
+                            <td><strong>@item.TotalPressureDrop.ToString("F1")</strong></td>
+                            <td>@row.CumulativeLoss.ToString("F1")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="report-grid">
+        <div class="panel-block recommendations-panel" data-recommendations-panel>
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">Рекомендации</p>
+                    <h2>Пути снижения потерь давления</h2>
+                </div>
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm recommendation-toggle"
+                        data-recommendations-toggle
+                        aria-expanded="true">
+                    Скрыть
+                </button>
+            </div>
+
+            <div class="recommendation-list" data-recommendations-content>
+                @if (Model.Recommendations.Count == 0)
+                {
+                    <p class="muted-text">Критических замечаний не выявлено. Трасса выглядит устойчивой для выбранных параметров.</p>
+                }
+                else
+                {
+                    foreach (var recommendation in Model.Recommendations)
+                    {
+                        <article class="recommendation-card">
+                            <div class="recommendation-head">
+                                <strong>@recommendation.Title</strong>
+                                <span>@recommendation.Priority</span>
+                            </div>
+                            <p>@recommendation.Description</p>
+                            <small>@recommendation.ImpactText</small>
+                        </article>
+                    }
+                }
+            </div>
+        </div>
+
+        <div class="panel-block">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">Диагностика расчета</p>
+                    <h2>Сообщения и замечания</h2>
+                </div>
+            </div>
+
+            <ul class="notice-list">
+                @if (Model.Notices.Count == 0)
+                {
+                    <li class="muted-text">Дополнительных замечаний по расчету нет.</li>
+                }
+                else
+                {
+                    foreach (var notice in Model.Notices)
+                    {
+                        <li>@notice</li>
+                    }
+                }
+            </ul>
+        </div>
+    </section>
 </div>
+
+<script>
+    window.currentCalculationSavePayload = @Html.Raw(JsonConvert.SerializeObject(new
+    {
+        name = Model.CalculationName,
+        calculationId = Model.SavedCalculationId,
+        repeat = false,
+        isTemplate = false,
+        model = Model.Input
+    }));
+</script>

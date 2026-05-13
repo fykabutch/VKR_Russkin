@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 95 610 365" role="img" aria-labelledby="title">
+  <title id="title">Conical collector</title>
+  <defs>
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#111" stroke-width="1.5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="12" markerHeight="10" refX="11" refY="5" orient="auto-start-reverse">
+      <polygon points="0,0 12,5 0,10" fill="#111"/>
+    </marker>
+    <marker id="flow-arrow" markerWidth="16" markerHeight="12" refX="15" refY="6" orient="auto">
+      <polygon points="0,0 16,6 0,12" fill="#111"/>
+    </marker>
+  </defs>
+  <rect x="45" y="95" width="610" height="365" fill="#fff"/>
+  <path d="M 80 250 L 620 250" stroke="#111" stroke-width="2" stroke-dasharray="25 8 5 8"/>
+  <path d="M 150 120 L 280 180 L 600 180 C 590 186, 610 193, 600 200 L 280 200 L 150 140 Z"
+        fill="url(#hatch)" stroke="#111" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 150 380 L 280 320 L 600 320 C 590 313, 610 306, 600 300 L 280 300 L 150 360 Z"
+        fill="url(#hatch)" stroke="#111" stroke-width="2" stroke-linejoin="round"/>
+  <line x1="150" y1="120" x2="150" y2="380" stroke="#111" stroke-width="3"/>
+  <path d="M 280 200 L 320 250 L 280 300" stroke="#111" stroke-width="2" stroke-dasharray="8 6" fill="none"/>
+  <line x1="80" y1="250" x2="175" y2="250" stroke="#111" stroke-width="3" marker-end="url(#flow-arrow)"/>
+  <path d="M 220 172 Q 200 210 210 250" stroke="#111" stroke-width="2" fill="none"
+        marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="150" y1="390" x2="150" y2="450" stroke="#111" stroke-width="2"/>
+  <line x1="280" y1="330" x2="280" y2="450" stroke="#111" stroke-width="2"/>
+  <line x1="150" y1="430" x2="280" y2="430" stroke="#111" stroke-width="2"
+        marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <line x1="430" y1="200" x2="430" y2="300" stroke="#111" stroke-width="2"
+        marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <g font-family="'Times New Roman', Times, serif" fill="#111">
+    <g font-style="italic" font-size="30">
+      <text x="160" y="225">&#945;/2</text>
+      <text x="210" y="415">l</text>
+      <text transform="rotate(-90 415 250)" x="415" y="250" text-anchor="middle"
+            stroke="#fff" stroke-width="5" paint-order="stroke">
+        d<tspan baseline-shift="sub" font-size="22">0</tspan>
+      </text>
+      <text x="460" y="258" stroke="#fff" stroke-width="5" paint-order="stroke">
+        v<tspan baseline-shift="sub" font-size="22">0</tspan> F<tspan baseline-shift="sub" font-size="22">0</tspan>
+      </text>
+    </g>
+  </g>
+</svg>

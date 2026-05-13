@@ -1,33 +1,71 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+publish/
+artifacts/buildcheck/
 
-#Ignore thumbnails created by Windows
-Thumbs.db
-#Ignore files built by Visual Studio
-*.obj
-*.exe
-*.pdb
-*.user
-*.aps
-*.pch
-*.vspscc
-*_i.c
-*_p.c
-*.ncb
-*.suo
-*.tlb
-*.tlh
-*.bak
-*.cache
-*.ilk
-*.log
-[Bb]in
-[Dd]ebug*/
-*.lib
-*.sbr
-obj/
-[Rr]elease*/
-_ReSharper*/
-[Tt]est[Rr]esult*
+# Visual Studio / Rider / VS Code
 .vs/
 .idea/
-#Nuget packages folder
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+_ReSharper*/
+*.DotSettings.user
+
+# .NET / NuGet
 packages/
+*.nupkg
+*.snupkg
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+
+# Test and coverage output
+[Tt]est[Rr]esult*/
+TestResults/
+coverage/
+coverage.xml
+coverage.cobertura.xml
+*.trx
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.cache
+*.pid
+*.seed
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# SQLite runtime files
+*.db-shm
+*.db-wal
+*.pre_3nf_backup_*.db
+
+# Local secrets and environment overrides
+.env
+.env.*
+!*.env.example
+appsettings.Local.json
+appsettings.*.local.json
+
+# Docker local overrides
+docker-compose.override.yml
+
+# Local workspace artifacts
+artifacts/

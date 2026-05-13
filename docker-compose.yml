@@ -1,0 +1,19 @@
+services:
+  web:
+    container_name: web-app-12_calculator-jenkins-3
+    hostname: 12_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "0.0.0.0:5454:5454"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5454
+      ConnectionStrings__DefaultConnection: "Data Source=/app/data/TeploenergetikaKursovaya.db"
+    volumes:
+      - teploenergetika-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  teploenergetika-data:

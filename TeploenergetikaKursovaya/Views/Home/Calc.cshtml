@@ -1,239 +1,471 @@
-﻿@using TeploenergetikaKursovaya.Models
-@model CalcViewModel
+@using Newtonsoft.Json
+@using System.Globalization
+@model TeploenergetikaKursovaya.Models.CalcViewModel
 @{
-    ViewData["Title"] = "Расчет тепловых потерь";
+    ViewData["Title"] = "Главная";
+
+    var routeHeightDelta = Model.HeightDirection == "down"
+        ? -Model.HeightDifference
+        : Model.HeightDirection == "up"
+            ? Model.HeightDifference
+            : 0;
+
+    var routeEditorConfig = JsonConvert.SerializeObject(new
+    {
+        initialSections = Model.Sections,
+        materialCatalog = Model.MaterialCatalog,
+        roughnessCatalog = Model.RoughnessCatalog,
+        localResistanceTypes = Model.LocalResistanceTypes,
+        localResistanceCatalog = Model.LocalResistanceCatalog,
+        useGeometricPressure = Model.UseGeometricPressure,
+        routeHeightDelta,
+        currentCalculationId = Model.CurrentCalculationId,
+        currentCalculationName = Model.CurrentCalculationName,
+        ambientAirTemperature = Model.AmbientAirTemperature,
+        ambientAirDensity = Model.AmbientAirDensity,
+        airDensityAtNormalConditions = Model.AirDensityAtNormalConditions,
+        savedPresets = Model.SavedPresets.Select(preset => new
+        {
+            id = preset.Id,
+            name = preset.Name,
+            updatedAtLocal = preset.UpdatedAtLocal.ToString("dd.MM.yyyy HH:mm")
+        })
+    });
 }
 
-<h2>Расчет тепловых потерь</h2>
-
-<form asp-action="Calc" method="post" id="calculationForm">
-    <fieldset>
-        <legend>Общие параметры</legend>
-
-        <div class="form-group">
-            <label asp-for="TgasInitial">Начальная температура газа (°C)</label>
-            <input asp-for="TgasInitial" class="form-control" />
-            <span asp-validation-for="TgasInitial" class="text-danger"></span>
+<div class="designer-shell">
+    <section class="hero-panel">
+        <div>
+            <p class="eyebrow">Интерактивный программный продукт</p>
+            <h1>Расчёт и оптимизация потерь давления в дымовой трассе</h1>
+            <p class="hero-text">
+                Соберите маршрут из блоков, задайте геометрию каждого элемента, сохраните собственные заготовки
+                и сразу получите живую аналитику по потерям давления и итоговый печатный отчёт.
+            </p>
         </div>
+    </section>
 
-        <div class="form-group">
-            <label asp-for="TemperatureLossPerMeter">Теплопотери на метр (°C/м)</label>
-            <input asp-for="TemperatureLossPerMeter" class="form-control" />
-            <span asp-validation-for="TemperatureLossPerMeter" class="text-danger"></span>
-        </div>
-
-        <div class="form-group">
-            <label asp-for="GasFlow">Расход газа (м³/с)</label>
-            <input asp-for="GasFlow" class="form-control" />
-            <span asp-validation-for="GasFlow" class="text-danger"></span>
-        </div>
-
-        <div class="form-group">
-            <label asp-for="MaterialType">Материал трубопровода</label>
-            <select asp-for="MaterialType" class="form-control">
-                @foreach (var m in Model.Materials)
-                {
-                    <option value="@m">@m</option>
-                }
-            </select>
-            <span asp-validation-for="MaterialType" class="text-danger"></span>
-        </div>
-
-        <div class="form-group">
-            <label asp-for="SurfaceCondition">Состояние поверхности</label>
-            <select asp-for="SurfaceCondition" class="form-control">
-                @foreach (var s in Model.SurfaceConditions)
-                {
-                    <option value="@s">@s</option>
-                }
-            </select>
-            <span asp-validation-for="SurfaceCondition" class="text-danger"></span>
-        </div>
-
-        <div class="form-group">
-            <label asp-for="HeightDifference">Перепад высот (м)</label>
-            <input asp-for="HeightDifference" class="form-control" id="heightDifference"
-                   onchange="toggleHeightDirection(this.value)" />
-            <span asp-validation-for="HeightDifference" class="text-danger"></span>
-        </div>
-
-        <div class="form-group" id="heightDirectionGroup" style="display: none;">
-            <label>Направление перепада высот:</label>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" asp-for="HeightDirection" value="up" id="heightUp">
-                <label class="form-check-label" for="heightUp">Вверх (потери со знаком -)</label>
+    <section class="panel-block">
+        <div class="panel-head panel-head-wrap">
+            <div>
+                <p class="panel-kicker">Личные заготовки</p>
+                <h2>База исходных данных пользователя</h2>
+                <p class="panel-description">Здесь можно сохранить текущую трассу как заготовку, загрузить ее обратно в редактор или удалить ненужный вариант.</p>
             </div>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" asp-for="HeightDirection" value="down" id="heightDown" checked>
-                <label class="form-check-label" for="heightDown">Вниз</label>
+            <div class="preset-actions-inline">
+                <button type="button" class="btn btn-outline-primary" id="clearDraftBtn">Очистить локальный черновик</button>
             </div>
         </div>
 
-        <h4>Объемные доли компонентов газа:</h4>
-        <div class="form-group">
-            <label asp-for="Y_N2">Азот (N₂):</label>
-            <input asp-for="Y_N2" class="form-control" />
-            <span asp-validation-for="Y_N2" class="text-danger"></span>
-        </div>
-        <div class="form-group">
-            <label asp-for="Y_O2">Кислород (O₂):</label>
-            <input asp-for="Y_O2" class="form-control" />
-            <span asp-validation-for="Y_O2" class="text-danger"></span>
-        </div>
-        <div class="form-group">
-            <label asp-for="Y_CO2">Углекислый газ (CO₂):</label>
-            <input asp-for="Y_CO2" class="form-control" />
-            <span asp-validation-for="Y_CO2" class="text-danger"></span>
-        </div>
-        <div class="form-group">
-            <label asp-for="Y_H2O">Водяной пар (H₂O):</label>
-            <input asp-for="Y_H2O" class="form-control" />
-            <span asp-validation-for="Y_H2O" class="text-danger"></span>
-        </div>
-    </fieldset>
-
-    <hr />
-
-    <fieldset>
-        <legend>Участки трубопровода</legend>
-        <div id="sections">
-            <!-- Секция для первого участка по умолчанию -->
-            <div class="border p-3 mb-3 section-container">
-                <div class="form-group">
-                    <label>Тип участка:</label>
-                    <select name="Sections[0].SectionKind" class="form-control section-kind" onchange="toggleFields(this, 0)">
-                        <option value="Прямой">Прямой участок</option>
-                        <option value="МС">Местное сопротивление</option>
-                    </select>
-                </div>
-
-                <div class="form-group length-field" id="length-0">
-                    <label>Длина участка (м):</label>
-                    <input type="number" step="any" name="Sections[0].Length" class="form-control" required />
-                </div>
-
-                <div class="form-group diameter-field" id="diameter-0">
-                    <label>Диаметр трубопровода (м):</label>
-                    <input type="number" step="any" name="Sections[0].Diameter" class="form-control" required />
-                </div>
-
-                <div class="form-group lr-type-field" id="lrtype-0" style="display: none;">
-                    <label>Тип местного сопротивления:</label>
-                    <select name="Sections[0].LocalResistanceType" class="form-control">
-                        @foreach (var type in Model.LocalResistanceTypes)
-                        {
-                            <option value="@type">@type</option>
-                        }
-                    </select>
-                </div>
-
-                <button type="button" class="btn btn-danger btn-sm remove-section" style="display: none;">Удалить</button>
+        <div class="form-grid preset-grid">
+            <div class="field">
+                <label for="presetName">Название новой заготовки</label>
+                <input id="presetName" class="form-control" type="text" maxlength="160" placeholder="Например: Котёл №2, базовый режим" />
+            </div>
+            <div class="field">
+                <label for="presetSelect">Сохранённые заготовки</label>
+                <select id="presetSelect" class="form-select">
+                    <option value="">Выберите заготовку</option>
+                    @foreach (var preset in Model.SavedPresets)
+                    {
+                        <option value="@preset.Id">@preset.Name (@preset.UpdatedAtLocal.ToString("dd.MM.yyyy HH:mm"))</option>
+                    }
+                </select>
+            </div>
+            <div class="preset-button-group">
+                <button type="button" class="btn btn-primary" id="savePresetBtn">Сохранить текущие данные</button>
+                <button type="button" class="btn btn-outline-primary" id="loadPresetBtn">Загрузить в редактор</button>
+                <button type="button" class="btn btn-outline-danger" id="deletePresetBtn">Удалить заготовку</button>
             </div>
         </div>
-        <button type="button" class="btn btn-secondary" id="addSectionBtn">Добавить участок</button>
-    </fieldset>
 
-    <hr />
-    <button type="submit" class="btn btn-primary">Рассчитать</button>
-</form>
+        <p class="preset-status" id="presetStatus">
+            Локальный черновик редактора сохраняется автоматически и поможет вернуться к последнему состоянию после просмотра отчёта.
+        </p>
+        <div class="guest-save-notice" data-guest-save-notice>
+            <p>Чтобы сохранить этот проект навсегда и открыть его на другом устройстве, войдите или зарегистрируйтесь.</p>
+            <div class="guest-save-notice__actions">
+                <button type="button" class="btn btn-outline-primary btn-sm" data-auth-open data-auth-mode="login">Войти</button>
+                <button type="button" class="btn btn-primary btn-sm" data-auth-open data-auth-mode="register">Зарегистрироваться</button>
+            </div>
+        </div>
+    </section>
+
+    <form asp-action="Calc" method="post" id="routeForm" novalidate>
+        <div asp-validation-summary="ModelOnly" class="alert alert-danger validation-panel"></div>
+        <input asp-for="CurrentCalculationId" type="hidden" />
+        <input asp-for="CurrentCalculationName" type="hidden" />
+
+        <div class="designer-grid">
+            <div class="designer-main">
+                <section class="panel-block">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">Исходные данные</p>
+                            <h2>Базовые параметры дымовых газов</h2>
+                            <p class="panel-description">Введите рабочие параметры газа, материал и состав смеси: эти данные используются во всех блоках маршрута.</p>
+                        </div>
+                    </div>
+
+                    <div class="form-grid three-columns">
+                        <div class="field">
+                            <label asp-for="TgasInitial">Начальная температура газа</label>
+                            <div class="unit-input-row">
+                                <input asp-for="TgasInitial" class="form-control" data-val="false" />
+                                <select class="form-select unit-select" data-unit-for="TgasInitial" data-current-unit="c">
+                                    <option value="c">°C</option>
+                                    <option value="k">K</option>
+                                </select>
+                            </div>
+                            <span asp-validation-for="TgasInitial" class="text-danger"></span>
+                        </div>
+                        <input asp-for="TemperatureLossPerMeter" type="hidden" data-val="false" />
+                        <div class="field">
+                            <label asp-for="GasFlow">Расход газа (в рабочем состоянии)</label>
+                            <div class="unit-input-row">
+                                <input asp-for="GasFlow" class="form-control" data-val="false" />
+                                <select class="form-select unit-select" data-unit-for="GasFlow" data-current-unit="m3s">
+                                    <option value="m3s">м³/с</option>
+                                    <option value="m3h">м³/ч</option>
+                                </select>
+                            </div>
+                            <span asp-validation-for="GasFlow" class="text-danger"></span>
+                        </div>
+                    </div>
+
+                    <input asp-for="OptimizationGoal" type="hidden" />
+
+                    <div class="form-grid two-columns material-settings-grid mt-3">
+                        <div class="field">
+                            <label asp-for="MaterialType">Базовый материал трассы</label>
+                            <select asp-for="MaterialType" class="form-select" id="MaterialType">
+                                @foreach (var material in Model.Materials)
+                                {
+                                    <option value="@material">@material</option>
+                                }
+                            </select>
+                            <span asp-validation-for="MaterialType" class="text-danger"></span>
+                        </div>
+                        <div class="field">
+                            <label asp-for="SurfaceCondition">Состояние поверхности</label>
+                            <select asp-for="SurfaceCondition" class="form-select" id="SurfaceCondition">
+                                @foreach (var condition in Model.SurfaceConditions)
+                                {
+                                    <option value="@condition">@condition</option>
+                                }
+                            </select>
+                            <span asp-validation-for="SurfaceCondition" class="text-danger"></span>
+                        </div>
+                    </div>
+
+                    <div class="inline-check mt-3">
+                        <input asp-for="UseCustomRoughness" class="form-check-input" id="UseCustomRoughness" />
+                        <label asp-for="UseCustomRoughness" class="form-check-label">Использовать собственную эквивалентную шероховатость для всей трассы</label>
+                    </div>
+
+                    <div class="field mt-3" id="globalCustomRoughnessField">
+                        <label asp-for="CustomRoughness">Эквивалентная шероховатость</label>
+                        <div class="unit-input-row">
+                            <input asp-for="CustomRoughness" class="form-control" type="number" step="0.000001" min="0.000001" max="0.1" data-val="false" />
+                            <select class="form-select unit-select" data-unit-for="CustomRoughness" data-current-unit="m">
+                                <option value="m">м</option>
+                                <option value="mm">мм</option>
+                            </select>
+                        </div>
+                        <span asp-validation-for="CustomRoughness" class="text-danger"></span>
+                    </div>
+
+                    <div class="roughness-reference-summary mt-3" id="globalRoughnessSummary"></div>
+
+                    <div class="gas-grid">
+                        <div class="field">
+                            <label asp-for="Y_N2">Азот N₂</label>
+                            <div class="unit-input-row">
+                                <input asp-for="Y_N2" class="form-control gas-component-field" type="number" step="0.01" min="0" max="1" data-val="false" />
+                                <select class="form-select unit-select" data-unit-for="Y_N2" data-current-unit="fraction">
+                                    <option value="fraction">доля</option>
+                                    <option value="percent">%</option>
+                                </select>
+                            </div>
+                            <span asp-validation-for="Y_N2" class="text-danger"></span>
+                        </div>
+                        <div class="field">
+                            <label asp-for="Y_O2">Кислород O₂</label>
+                            <div class="unit-input-row">
+                                <input asp-for="Y_O2" class="form-control gas-component-field" type="number" step="0.01" min="0" max="1" data-val="false" />
+                                <select class="form-select unit-select" data-unit-for="Y_O2" data-current-unit="fraction">
+                                    <option value="fraction">доля</option>
+                                    <option value="percent">%</option>
+                                </select>
+                            </div>
+                            <span asp-validation-for="Y_O2" class="text-danger"></span>
+                        </div>
+                        <div class="field">
+                            <label asp-for="Y_CO2">Углекислый газ CO₂</label>
+                            <div class="unit-input-row">
+                                <input asp-for="Y_CO2" class="form-control gas-component-field" type="number" step="0.01" min="0" max="1" data-val="false" />
+                                <select class="form-select unit-select" data-unit-for="Y_CO2" data-current-unit="fraction">
+                                    <option value="fraction">доля</option>
+                                    <option value="percent">%</option>
+                                </select>
+                            </div>
+                            <span asp-validation-for="Y_CO2" class="text-danger"></span>
+                        </div>
+                        <div class="field">
+                            <label asp-for="Y_H2O">Водяной пар H₂O</label>
+                            <div class="unit-input-row">
+                                <input asp-for="Y_H2O" class="form-control gas-component-field" type="number" step="0.01" min="0" max="1" data-val="false" />
+                                <select class="form-select unit-select" data-unit-for="Y_H2O" data-current-unit="fraction">
+                                    <option value="fraction">доля</option>
+                                    <option value="percent">%</option>
+                                </select>
+                            </div>
+                            <span asp-validation-for="Y_H2O" class="text-danger"></span>
+                        </div>
+                    </div>
+
+                    <p class="gas-composition-summary" id="gasCompositionSummary">Сумма: 100%</p>
+                </section>
+
+                <section class="panel-block">
+                    <div class="panel-head panel-head-wrap">
+                        <div>
+                            <p class="panel-kicker">Маршрут дымовых газов</p>
+                            <h2>Графический редактор маршрута</h2>
+                            <p class="panel-description">Соберите трассу из типовых элементов, затем выбирайте блоки на холсте и задавайте их размеры в панели параметров.</p>
+                        </div>
+                    </div>
+
+                    <div class="route-meta">
+                        <span id="routeCountBadge">0 блоков</span>
+                        <span>Перетаскивайте типовые блоки из палитры на холст. Клик по блоку открывает панель параметров, а выбранный элемент подсвечивается контуром.</span>
+                    </div>
+
+                    <div class="route-editor-layout">
+                        <div class="route-palette panel-soft">
+                            <h3>Палитра блоков</h3>
+                            <div class="route-palette-grid" id="routePalette">
+                                <button type="button" class="palette-item" draggable="true" data-kind="Straight">Прямой участок</button>
+                                <button type="button" class="palette-item" draggable="true" data-kind="Bend">Поворот</button>
+                                <button type="button" class="palette-item" draggable="true" data-kind="Contraction">Сужение</button>
+                                <button type="button" class="palette-item" draggable="true" data-kind="Expansion">Расширение</button>
+                                <button type="button" class="palette-item" draggable="true" data-kind="LocalResistance">Местное сопротивление</button>
+                            </div>
+                        </div>
+
+                        <div class="route-canvas-wrap panel-soft">
+                            <h3>Холст маршрута</h3>
+                            <div id="routeCanvas" class="route-canvas" aria-label="Графический маршрут"></div>
+                        </div>
+                    </div>
+
+                    <section class="route-inspector panel-soft">
+                        <div class="panel-head">
+                            <div>
+                                <p class="panel-kicker">Параметры выбранного блока</p>
+                                <h2 id="inspectorTitle">Блок не выбран</h2>
+                                <p class="panel-description">Панель показывает только параметры выбранного элемента: геометрию, теплопотери, КМС и индивидуальные свойства материала.</p>
+                            </div>
+                            <button type="button" class="btn btn-outline-danger d-none" id="removeSelectedBlockBtn">Удалить блок</button>
+                        </div>
+                        <div id="blockInspectorBody" class="block-inspector-empty">
+                            Выберите блок на холсте, чтобы задать его параметры.
+                        </div>
+                    </section>
+
+                    <div id="sectionInputsHost" class="d-none"></div>
+                </section>
+
+                <section class="panel-block geometry-pressure-panel" id="geometryPressurePanel">
+                    <div class="panel-head panel-head-wrap">
+                        <div>
+                            <p class="panel-kicker">Учет геометрического давления</p>
+                            <h2 class="field-label">
+                                <span>Геометрическое давление</span>
+                                <button type="button"
+                                        class="context-tooltip-trigger"
+                                        data-context-tooltip-trigger
+                                        aria-label="Подсказка: геометрическое давление"
+                                        data-tooltip-title="Геометрическое давление"
+                                        data-tooltip-essence="Поправка к сопротивлению, возникающая из-за разности высот между началом и концом трассы."
+                                        data-tooltip-logic="Если учет включен, программа добавляет ΔPгеом к общим потерям. При движении горячих газов вниз оно увеличивает сопротивление, при движении вверх уменьшает его, а при H = 0 не учитывается.">?</button>
+                            </h2>
+                            <p class="panel-description">Включайте этот блок, когда конечная отметка трассы выше или ниже начальной и нужно учесть естественное движение горячих газов.</p>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary" id="toggleGeometryPressureBtn">
+                            Учитывать в расчете
+                        </button>
+                    </div>
+
+                    <div class="geometry-pressure-body d-none" id="geometricPressureBody">
+                        <div class="form-grid two-columns">
+                            <div class="field">
+                                <label for="RouteHeightDelta">Перепад высоты H</label>
+                                <div class="unit-input-row">
+                                    <input id="RouteHeightDelta" class="form-control" type="number" step="0.1" value="@routeHeightDelta.ToString(CultureInfo.InvariantCulture)" data-val="false" />
+                                    <select class="form-select unit-select" data-unit-for="RouteHeightDelta" data-current-unit="m">
+                                        <option value="m">м</option>
+                                        <option value="mm">мм</option>
+                                    </select>
+                                </div>
+                                <small class="field-hint">Положительное значение означает подъем, отрицательное — снижение.</small>
+                            </div>
+                            <div class="field">
+                                <label asp-for="AmbientAirTemperature">Температура наружного воздуха</label>
+                                <div class="unit-input-row">
+                                    <input asp-for="AmbientAirTemperature" class="form-control" type="number" step="0.1" data-val="false" />
+                                    <select class="form-select unit-select" data-unit-for="AmbientAirTemperature" data-current-unit="c">
+                                        <option value="c">°C</option>
+                                        <option value="k">K</option>
+                                    </select>
+                                </div>
+                                <span asp-validation-for="AmbientAirTemperature" class="text-danger"></span>
+                            </div>
+                            <div class="geometry-pressure-result">
+                                <span class="field-label">
+                                    <span>Плотность наружного воздуха</span>
+                                    <button type="button"
+                                            class="context-tooltip-trigger"
+                                            data-context-tooltip-trigger
+                                            aria-label="Подсказка: формула геометрического давления"
+                                            data-tooltip-title="Формула ΔPгеом"
+                                            data-tooltip-essence="ΔPгеом = g · H · (ρ₁ − ρ₂), где g = 9.81 м/с², H — нивелирная разность высот."
+                                            data-tooltip-logic="Плотность воздуха рассчитывается по температуре наружного воздуха при 101.325 кПа. Если горячие газы идут вниз, используется ρвоздуха − ρгаза; если вверх — ρгаза − ρвоздуха.">?</button>
+                                </span>
+                                <strong id="ambientAirDensityValue">@Model.AmbientAirDensity.ToString("F3") кг/м³</strong>
+                                <small>При заданной температуре и давлении 101.325 кПа.</small>
+                            </div>
+                        </div>
+
+                        <div class="geometry-pressure-note">
+                            <p id="geometryPressureSummary">H = 0: горизонтальная трасса не получает геометрическую добавку к сопротивлению.</p>
+                            <p id="geometryPressureSignHint">При движении горячих газов вниз ΔPгеом положительно, при движении вверх — отрицательно.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="panel-block">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">Детализация расчёта</p>
+                            <h2>Потери давления по элементам</h2>
+                            <p class="panel-description">После заполнения маршрута таблица обновляется автоматически и показывает вклад каждого блока в суммарные потери.</p>
+                        </div>
+                        <span class="status-badge" id="previewStatus">Ожидание расчёта</span>
+                    </div>
+
+                    <div id="previewEmpty" class="preview-empty">
+                        Заполните параметры маршрута. Как только схема станет корректной, таблица расчёта обновится автоматически.
+                    </div>
+
+                    <div class="table-responsive d-none" id="liveResultsWrapper">
+                        <table class="table modern-table" id="liveResultsTable">
+                            <thead>
+                                <tr>
+                                    <th>Элемент</th>
+                                    <th>Тип</th>
+                                    <th>Форма / dэкв, м</th>
+                                    <th>Скорость, м/с</th>
+                                    <th>λ / ζ</th>
+                                    <th>ΔPтр, Па</th>
+                                    <th>ΔPмс, Па</th>
+                                    <th>ΔPгеом, Па</th>
+                                    <th>ΣΔP, Па</th>
+                                    <th>Доминирующий фактор</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary btn-lg">Сформировать итоговый отчёт</button>
+                </div>
+            </div>
+
+            <aside class="designer-sidebar">
+                <section class="panel-block sticky-panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">Живая аналитика</p>
+                            <h2>Сводка по трассе</h2>
+                            <p class="panel-description">Сводка пересчитывается во время редактирования и помогает быстро увидеть общие потери, критический блок и рекомендации.</p>
+                        </div>
+                    </div>
+
+                    <div class="metrics-grid analytics-metrics">
+                        <div class="metric-card">
+                            <span>Суммарные потери</span>
+                            <strong id="metricTotal">0 Па</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>На трение</span>
+                            <strong id="metricFriction">0 Па</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Местные</span>
+                            <strong id="metricLocal">0 Па</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Геометрия</span>
+                            <strong id="metricGeometric">0 Па</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Длина трассы</span>
+                            <strong id="metricLength">0 м</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Макс. скорость</span>
+                            <strong id="metricVelocity">0 м/с</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span>Критический блок</span>
+                            <strong id="metricCritical">—</strong>
+                        </div>
+                    </div>
+
+                    <div class="analysis-card">
+                        <h3>Оценка эффективности</h3>
+                        <p class="analysis-description">Итоговая оценка показывает, насколько удачной получилась схема по уровню потерь давления.</p>
+                        <p class="efficiency-label" id="efficiencyLabel">Ожидается расчёт</p>
+                        <p id="heightSummary">Перепад высоты задается в блоке геометрического давления.</p>
+                    </div>
+
+                    <div class="analysis-card recommendations-panel" data-recommendations-panel>
+                        <div class="recommendation-panel-head">
+                            <div>
+                                <h3>Рекомендации по оптимизации</h3>
+                                <p class="analysis-description">Программа подсказывает, какие участки дают лишнее сопротивление и что можно проверить в первую очередь.</p>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm recommendation-toggle"
+                                    data-recommendations-toggle
+                                    aria-expanded="true">
+                                Скрыть
+                            </button>
+                        </div>
+                        <div id="recommendationsList" class="recommendation-list" data-recommendations-content>
+                            <p class="muted-text">Рекомендации появятся после первого успешного расчёта.</p>
+                        </div>
+                    </div>
+
+                    <div class="analysis-card">
+                        <h3>Сообщения расчёта</h3>
+                        <p class="analysis-description">Здесь появляются предупреждения о неполных данных, выходе за справочные диапазоны и важных расчетных допущениях.</p>
+                        <ul id="noticesList" class="notice-list">
+                            <li class="muted-text">Пока сообщений нет.</li>
+                        </ul>
+                    </div>
+                </section>
+            </aside>
+        </div>
+    </form>
+</div>
 
 @section Scripts {
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            let sectionIndex = 1;
-            const container = document.getElementById('sections');
-            const addSectionBtn = document.getElementById('addSectionBtn');
-
-            // Инициализация направления высот
-            toggleHeightDirection(document.getElementById('heightDifference').value);
-
-            // Обработчик для кнопки добавления участка
-            addSectionBtn.addEventListener('click', function() {
-                const newSection = document.createElement('div');
-                newSection.classList.add('border', 'p-3', 'mb-3', 'section-container');
-
-                // Получаем HTML для опций местных сопротивлений
-                const lrOptions = document.querySelector('select[name="Sections[0].LocalResistanceType"]').innerHTML;
-
-                newSection.innerHTML = `
-                    <div class="form-group">
-                        <label>Тип участка:</label>
-                        <select name="Sections[${sectionIndex}].SectionKind" class="form-control section-kind" onchange="toggleFields(this, ${sectionIndex})">
-                            <option value="Прямой">Прямой участок</option>
-                            <option value="МС">Местное сопротивление</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group length-field" id="length-${sectionIndex}">
-                        <label>Длина участка (м):</label>
-                        <input type="number" step="any" name="Sections[${sectionIndex}].Length" class="form-control" required />
-                    </div>
-
-                    <div class="form-group diameter-field" id="diameter-${sectionIndex}">
-                        <label>Диаметр трубопровода (м):</label>
-                        <input type="number" step="any" name="Sections[${sectionIndex}].Diameter" class="form-control" required />
-                    </div>
-
-                    <div class="form-group lr-type-field" id="lrtype-${sectionIndex}" style="display: none;">
-                        <label>Тип местного сопротивления:</label>
-                        <select name="Sections[${sectionIndex}].LocalResistanceType" class="form-control">
-                            ${lrOptions}
-                        </select>
-                    </div>
-
-                    <button type="button" class="btn btn-danger btn-sm remove-section">Удалить</button>
-                `;
-
-                container.appendChild(newSection);
-
-                // Добавляем обработчик для новой кнопки удаления
-                newSection.querySelector('.remove-section').addEventListener('click', function() {
-                    newSection.remove();
-                });
-
-                sectionIndex++;
-            });
-
-            // Глобальная функция для переключения полей
-            window.toggleFields = function(select, index) {
-                const section = select.closest('.section-container');
-                const lengthField = section.querySelector('.length-field');
-                const diameterField = section.querySelector('.diameter-field');
-                const lrTypeField = section.querySelector('.lr-type-field');
-                const removeBtn = section.querySelector('.remove-section');
-
-                if (select.value === "Прямой") {
-                    lengthField.style.display = "block";
-                    diameterField.style.display = "block";
-                    lrTypeField.style.display = "none";
-                    removeBtn.style.display = "none";
-                } else {
-                    lengthField.style.display = "none";
-                    diameterField.style.display = "block"; // Показываем диаметр для местного сопротивления
-                    lrTypeField.style.display = "block";
-                    removeBtn.style.display = "block";
-                }
-            };
-
-            // Функция для показа/скрытия выбора направления перепада высот
-            window.toggleHeightDirection = function(value) {
-                const directionGroup = document.getElementById('heightDirectionGroup');
-                if (parseFloat(value) !== 0) {
-                    directionGroup.style.display = 'block';
-                    // Устанавливаем значение по умолчанию, если ничего не выбрано
-                    if (!document.querySelector('input[name="HeightDirection"]:checked')) {
-                        document.getElementById('heightDown').checked = true;
-                    }
-                } else {
-                    directionGroup.style.display = 'none';
-                }
-            };
-
-            // Инициализация полей для первого участка
-            const firstSectionKind = document.querySelector('select.section-kind');
-            if (firstSectionKind) {
-                toggleFields(firstSectionKind, 0);
-            }
-        });
+        window.routeEditorConfig = @Html.Raw(routeEditorConfig);
     </script>
+    <script src="~/js/route-editor.js" asp-append-version="true"></script>
 }

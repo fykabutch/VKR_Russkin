@@ -1,0 +1,12 @@
+.git/
+.vs/
+artifacts/
+**/bin/
+**/obj/
+**/*.user
+**/*.db-shm
+**/*.db-wal
+**/*.pre_3nf_backup_*.db
+Dockerfile
+docker-compose.yml
+Jenkinsfile

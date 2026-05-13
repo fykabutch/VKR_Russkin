@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TeploenergetikaKursovaya.Data;
 
@@ -10,9 +11,11 @@ using TeploenergetikaKursovaya.Data;
 namespace TeploenergetikaKursovaya.Migrations
 {
     [DbContext(typeof(TeploDBContext))]
-    partial class TeploDBContextModelSnapshot : ModelSnapshot
+    [Migration("20250523114031_AddStringNullableDirection")]
+    partial class AddStringNullableDirection
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
@@ -61,41 +64,12 @@ namespace TeploenergetikaKursovaya.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("IsTabular")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<double?>("ValueofLR")
+                    b.Property<double>("ValueofLR")
                         .HasColumnType("REAL");
 
                     b.HasKey("Id");
 
                     b.ToTable("LRCs");
-                });
-
-            modelBuilder.Entity("TeploenergetikaKursovaya.Data.ResistanceDataPoint", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<double>("ParamX")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("ParamY")
-                        .HasColumnType("REAL");
-
-                    b.Property<int>("ResistanceId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<double>("ZetaValue")
-                        .HasColumnType("REAL");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ResistanceId", "ParamX", "ParamY")
-                        .IsUnique();
-
-                    b.ToTable("ResistanceDataPoints");
                 });
 
             modelBuilder.Entity("TeploenergetikaKursovaya.Data.Roughness", b =>
@@ -120,46 +94,45 @@ namespace TeploenergetikaKursovaya.Migrations
                     b.ToTable("Roughnesses");
                 });
 
-            modelBuilder.Entity("TeploenergetikaKursovaya.Data.UserPreset", b =>
+            modelBuilder.Entity("Variant", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime>("CreatedAtUtc")
+                    b.Property<double?>("CustomRoughness")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("GasFlow")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("HeightDifference")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("HeightDirection")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Name")
+                    b.Property<string>("MaterialType")
                         .IsRequired()
-                        .HasMaxLength(160)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("PayloadJson")
+                    b.Property<string>("SectionsData")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("UpdatedAtUtc")
+                    b.Property<string>("SurfaceCondition")
+                        .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<double>("TemperatureLossPerMeter")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("TgasInitial")
+                        .HasColumnType("REAL");
 
                     b.HasKey("Id");
 
-                    b.ToTable("UserPresets");
-                });
-
-            modelBuilder.Entity("TeploenergetikaKursovaya.Data.ResistanceDataPoint", b =>
-                {
-                    b.HasOne("TeploenergetikaKursovaya.Data.LRC", "Resistance")
-                        .WithMany("DataPoints")
-                        .HasForeignKey("ResistanceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Resistance");
-                });
-
-            modelBuilder.Entity("TeploenergetikaKursovaya.Data.LRC", b =>
-                {
-                    b.Navigation("DataPoints");
+                    b.ToTable("Variants");
                 });
 #pragma warning restore 612, 618
         }

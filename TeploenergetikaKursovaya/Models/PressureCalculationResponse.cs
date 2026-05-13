@@ -1,14 +1,11 @@
 namespace TeploenergetikaKursovaya.Models;
 
-public class CalcPageViewModel
+public class PressureCalculationResponse
 {
-    public CalcViewModel Input { get; set; } = new();
+    public bool Success { get; set; }
+    public string? ErrorMessage { get; set; }
     public CalculationSummaryViewModel Summary { get; set; } = new();
     public List<CalcResultsViewModel> Results { get; set; } = [];
     public List<OptimizationRecommendationViewModel> Recommendations { get; set; } = [];
     public List<string> Notices { get; set; } = [];
-    public bool IsAuthenticated { get; set; }
-    public string? UserLogin { get; set; }
-    public int? SavedCalculationId { get; set; }
-    public string CalculationName { get; set; } = "Расчет дымовой трассы";
 }
