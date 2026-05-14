@@ -17,7 +17,8 @@ pipeline {
 
         stage('Start Docker Container') {
             steps {
-                sh 'docker compose up -d'
+                sh 'docker compose down --remove-orphans'
+                sh 'docker compose up -d --remove-orphans'
                 sh 'docker compose ps'
             }
         }

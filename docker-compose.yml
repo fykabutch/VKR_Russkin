@@ -27,8 +27,9 @@ services:
       MARIADB_USER: vkr_russkin
       MARIADB_PASSWORD: vkr_russkin_password
       MARIADB_ROOT_PASSWORD: vkr_russkin_root_password
+      MARIADB_ROOT_HOST: "%"
     ports:
-      - "127.0.0.1:3307:3306"
+      - "127.0.0.1:5456:3306"
     volumes:
       - vkr-russkin-mariadb-data:/var/lib/mysql
     healthcheck:
