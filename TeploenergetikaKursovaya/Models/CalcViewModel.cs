@@ -4,6 +4,8 @@ namespace TeploenergetikaKursovaya.Models;
 
 public class CalcViewModel : IValidatableObject
 {
+    public const double GasCompositionTolerance = 0.0005;
+
     [Required(ErrorMessage = "Обязательное поле")]
     [Range(0, 1500, ErrorMessage = "Допустимый диапазон: 0-1500°C")]
     public double TgasInitial { get; set; } = 180;
@@ -91,17 +93,17 @@ public class CalcViewModel : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        var sum = (Y_N2 ?? 0) + (Y_O2 ?? 0) + (Y_CO2 ?? 0) + (Y_H2O ?? 0);
-        if (sum > 1.000001)
+        var sum = GetGasCompositionSum();
+        if (sum > 1 + GasCompositionTolerance)
         {
             yield return new ValidationResult(
                 $"Сумма компонентов газа больше 100% ({sum * 100:F1}%). Сформировать отчет невозможно, уменьшите доли компонентов.",
                 [nameof(Y_N2), nameof(Y_O2), nameof(Y_CO2), nameof(Y_H2O)]);
         }
-        else if (sum < 0.99)
+        else if (sum < 1 - GasCompositionTolerance)
         {
             yield return new ValidationResult(
-                $"Сумма компонентов газа меньше 100% ({sum * 100:F1}%). Проверьте состав газа перед формированием отчета.",
+                $"Сумма компонентов газа меньше 100% ({sum * 100:F1}%). Сформировать отчет невозможно, увеличьте доли компонентов.",
                 [nameof(Y_N2), nameof(Y_O2), nameof(Y_CO2), nameof(Y_H2O)]);
         }
 
@@ -133,6 +135,11 @@ public class CalcViewModel : IValidatableObject
                 [nameof(AmbientAirTemperature)]);
         }
     }
+
+    public double GetGasCompositionSum() => (Y_N2 ?? 0) + (Y_O2 ?? 0) + (Y_CO2 ?? 0) + (Y_H2O ?? 0);
+
+    public static bool IsGasCompositionValid(double sum) =>
+        Math.Abs(sum - 1.0) <= GasCompositionTolerance;
 }
 
 public static class SectionKinds

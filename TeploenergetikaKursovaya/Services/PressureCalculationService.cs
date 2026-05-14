@@ -29,6 +29,12 @@ public class PressureCalculationService : IPressureCalculationService
                 return Fail("Добавьте хотя бы один элемент трассы.");
             }
 
+            var gasCompositionSum = model.GetGasCompositionSum();
+            if (!CalcViewModel.IsGasCompositionValid(gasCompositionSum))
+            {
+                return Fail($"Сумма компонентов газа должна быть равна 100%. Сейчас: {gasCompositionSum * 100:F1}%.");
+            }
+
             var componentDensities = _context.DotMCs
                 .Where(c => c.ComponentName != null)
                 .ToDictionary(c => c.ComponentName!, c => c.ComponentDensity, StringComparer.OrdinalIgnoreCase);

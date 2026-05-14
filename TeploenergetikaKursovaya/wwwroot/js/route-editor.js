@@ -60,6 +60,7 @@
   const roughnessCatalog = Array.isArray(config.roughnessCatalog) ? config.roughnessCatalog : [];
   const localResistanceTypes = Array.isArray(config.localResistanceTypes) ? config.localResistanceTypes : [];
   const localResistanceCatalog = config.localResistanceCatalog || {};
+  const gasCompositionTolerance = 0.0005;
   const fieldUnitIds = [
     "TgasInitial",
     "TemperatureLossPerMeter",
@@ -1192,7 +1193,7 @@
 
     const sum = getGasCompositionSum();
     const percent = sum * 100;
-    const isValid = percent >= 99 && percent <= 100;
+    const isValid = Math.abs(sum - 1) <= gasCompositionTolerance;
     elements.gasCompositionSummary.textContent = `Сумма: ${formatNumber(percent, 1)}%`;
     elements.gasCompositionSummary.classList.toggle("is-error", !isValid);
 
@@ -1212,10 +1213,10 @@
     syncConicalCollectorOutlets();
     const messages = [];
     const sum = getGasCompositionSum();
-    if (sum > 1.000001) {
+    if (sum > 1 + gasCompositionTolerance) {
       messages.push(`Сумма компонентов газа больше 100% (${formatNumber(sum * 100, 1)}%). Сформировать отчет невозможно.`);
-    } else if (sum < 0.99) {
-      messages.push(`Сумма компонентов газа меньше 100% (${formatNumber(sum * 100, 1)}%). Проверьте состав перед формированием отчета.`);
+    } else if (sum < 1 - gasCompositionTolerance) {
+      messages.push(`Сумма компонентов газа меньше 100% (${formatNumber(sum * 100, 1)}%). Сформировать отчет невозможно.`);
     }
 
     if (state.useGeometricPressure && calculateAmbientAirDensity() == null) {
