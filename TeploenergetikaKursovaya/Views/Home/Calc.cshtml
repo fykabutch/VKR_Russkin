@@ -28,7 +28,7 @@
         {
             id = preset.Id,
             name = preset.Name,
-            updatedAtLocal = preset.UpdatedAtLocal.ToString("dd.MM.yyyy HH:mm")
+            updatedAtUtc = preset.UpdatedAtUtc
         })
     });
 }
@@ -68,7 +68,7 @@
                     <option value="">Выберите заготовку</option>
                     @foreach (var preset in Model.SavedPresets)
                     {
-                        <option value="@preset.Id">@preset.Name (@preset.UpdatedAtLocal.ToString("dd.MM.yyyy HH:mm"))</option>
+                        <option value="@preset.Id">@preset.Name (@preset.UpdatedAtUtc.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) UTC)</option>
                     }
                 </select>
             </div>
@@ -450,10 +450,20 @@
                         </div>
                     </div>
 
-                    <div class="analysis-card">
-                        <h3>Сообщения расчёта</h3>
-                        <p class="analysis-description">Здесь появляются предупреждения о неполных данных, выходе за справочные диапазоны и важных расчетных допущениях.</p>
-                        <ul id="noticesList" class="notice-list">
+                    <div class="analysis-card notices-panel" data-notices-panel>
+                        <div class="recommendation-panel-head">
+                            <div>
+                                <h3>Сообщения расчёта</h3>
+                                <p class="analysis-description">Здесь появляются предупреждения о неполных данных, выходе за справочные диапазоны и важных расчетных допущениях.</p>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm recommendation-toggle"
+                                    data-notices-toggle
+                                    aria-expanded="true">
+                                Скрыть
+                            </button>
+                        </div>
+                        <ul id="noticesList" class="notice-list" data-notices-content>
                             <li class="muted-text">Пока сообщений нет.</li>
                         </ul>
                     </div>

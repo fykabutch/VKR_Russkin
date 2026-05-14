@@ -1,4 +1,45 @@
 (function () {
+  const localDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+  window.formatUserLocalDateTime = function (value) {
+    if (!value) {
+      return "";
+    }
+
+    const parsed = new Date(String(value));
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value);
+    }
+
+    return localDateFormatter.format(parsed).replace(",", "");
+  };
+
+  function applyLocalDateTimes(root) {
+    (root || document).querySelectorAll("[data-local-datetime]").forEach((element) => {
+      const raw = element.getAttribute("data-local-datetime");
+      const formatted = window.formatUserLocalDateTime(raw);
+      if (!formatted) {
+        return;
+      }
+
+      element.textContent = formatted;
+      element.setAttribute("title", `UTC: ${raw}`);
+    });
+  }
+
+  applyLocalDateTimes(document);
+  document.addEventListener("teplo:format-local-datetimes", (event) => {
+    applyLocalDateTimes(event.detail?.root || document);
+  });
+})();
+
+(function () {
   const guestPresetKey = "dymtrassa.guestPresets.v1";
   const authShell = document.getElementById("authShell");
   const authModal = document.getElementById("authModal");
@@ -253,6 +294,61 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+})();
+
+(function () {
+  const storageKey = "dymtrassa.hideCalculationNotices.v1";
+
+  let noticesHidden = readStoredState();
+
+  applyNoticesState();
+  document.addEventListener("click", handleNoticesToggleClick);
+  window.addEventListener("storage", (event) => {
+    if (event.key !== storageKey) {
+      return;
+    }
+
+    noticesHidden = readStoredState();
+    applyNoticesState();
+  });
+
+  function handleNoticesToggleClick(event) {
+    const toggle = event.target.closest("[data-notices-toggle]");
+    if (!toggle) {
+      return;
+    }
+
+    noticesHidden = !noticesHidden;
+    writeStoredState(noticesHidden);
+    applyNoticesState();
+  }
+
+  function applyNoticesState() {
+    document.querySelectorAll("[data-notices-panel]").forEach((panel) => {
+      panel.classList.toggle("is-collapsed", noticesHidden);
+    });
+
+    document.querySelectorAll("[data-notices-toggle]").forEach((button) => {
+      button.textContent = noticesHidden ? "Показать" : "Скрыть";
+      button.setAttribute("aria-expanded", String(!noticesHidden));
+    });
+  }
+
+  function readStoredState() {
+    try {
+      return window.localStorage.getItem(storageKey) === "true";
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function writeStoredState(value) {
+    try {
+      window.localStorage.setItem(storageKey, value ? "true" : "false");
+    } catch (_error) {
+      // The toggle should keep working for the current page even when storage is blocked.
+    }
   }
 })();
 

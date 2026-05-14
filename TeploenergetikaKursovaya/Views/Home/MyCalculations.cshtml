@@ -1,3 +1,4 @@
+@using System.Globalization
 @model TeploenergetikaKursovaya.Models.MyCalculationsViewModel
 @{
     ViewData["Title"] = "Мои расчеты";
@@ -78,8 +79,16 @@
                                         <button class="btn btn-outline-primary btn-sm" type="submit">Сохранить</button>
                                     </form>
                                 </td>
-                                <td>@calculation.CreatedAtLocal.ToString("dd.MM.yyyy HH:mm")</td>
-                                <td>@calculation.UpdatedAtLocal.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td>
+                                    <span data-local-datetime="@calculation.CreatedAtUtc.ToString("O", CultureInfo.InvariantCulture)">
+                                        @calculation.CreatedAtUtc.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) UTC
+                                    </span>
+                                </td>
+                                <td>
+                                    <span data-local-datetime="@calculation.UpdatedAtUtc.ToString("O", CultureInfo.InvariantCulture)">
+                                        @calculation.UpdatedAtUtc.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) UTC
+                                    </span>
+                                </td>
                                 <td>@calculation.TotalPressureDrop.ToString("F2")</td>
                                 <td>@(calculation.IsTemplate ? "Да" : "Нет")</td>
                                 <td>

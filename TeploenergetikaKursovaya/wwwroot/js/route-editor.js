@@ -1457,7 +1457,10 @@
       .concat(state.presets.map((preset) => {
         const id = readProp(preset, "id", "Id");
         const name = readProp(preset, "name", "Name") || "Без названия";
-        const updatedAt = formatPresetDate(readProp(preset, "updatedAtLocal", "UpdatedAtLocal"));
+        const updatedAt = formatPresetDate(
+          readProp(preset, "updatedAtUtc", "UpdatedAtUtc") ||
+          readProp(preset, "updatedAtLocal", "UpdatedAtLocal")
+        );
         return `<option value="${escapeAttr(String(id))}">${escapeHtml(updatedAt ? `${name} (${updatedAt})` : name)}</option>`;
       }))
       .join("");
@@ -1485,6 +1488,10 @@
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) {
       return raw;
+    }
+
+    if (typeof window.formatUserLocalDateTime === "function") {
+      return window.formatUserLocalDateTime(parsed.toISOString());
     }
 
     return new Intl.DateTimeFormat("ru-RU", {

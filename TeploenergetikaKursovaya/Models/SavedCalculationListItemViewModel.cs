@@ -6,9 +6,9 @@ public class SavedCalculationListItemViewModel
 
     public string Name { get; set; } = string.Empty;
 
-    public DateTime CreatedAtLocal { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
 
-    public DateTime UpdatedAtLocal { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
 
     public bool IsTemplate { get; set; }
 

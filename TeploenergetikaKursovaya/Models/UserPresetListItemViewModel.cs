@@ -6,5 +6,5 @@ public class UserPresetListItemViewModel
 
     public string Name { get; set; } = string.Empty;
 
-    public DateTime UpdatedAtLocal { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
 }

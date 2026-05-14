@@ -758,7 +758,7 @@ public class HomeController : Controller
             {
                 Id = x.Id,
                 Name = x.Name,
-                UpdatedAtLocal = x.UpdatedAtUtc.ToLocalTime()
+                UpdatedAtUtc = NormalizeUtc(x.UpdatedAtUtc)
             })
             .ToList();
     }
@@ -910,8 +910,8 @@ public class HomeController : Controller
             {
                 Id = item.Id,
                 Name = item.Name,
-                CreatedAtLocal = item.CreatedAtUtc.ToLocalTime(),
-                UpdatedAtLocal = item.UpdatedAtUtc.ToLocalTime(),
+                CreatedAtUtc = NormalizeUtc(item.CreatedAtUtc),
+                UpdatedAtUtc = NormalizeUtc(item.UpdatedAtUtc),
                 IsTemplate = item.IsTemplate,
                 TotalPressureDrop = item.Summary?.TotalPressureDrop ?? 0
             })
@@ -925,6 +925,16 @@ public class HomeController : Controller
         sort is "updated_asc" or "created_desc" or "created_asc" or "name_asc" or "name_desc" or "pressure_desc" or "pressure_asc"
             ? sort
             : "updated_desc";
+
+    private static DateTime NormalizeUtc(DateTime utcDateTime)
+    {
+        return utcDateTime.Kind switch
+        {
+            DateTimeKind.Utc => utcDateTime,
+            DateTimeKind.Local => utcDateTime.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc)
+        };
+    }
 
     private void SyncGuestPresetsInternal(int userId, IEnumerable<GuestPresetSyncItem>? guestPresets)
     {
