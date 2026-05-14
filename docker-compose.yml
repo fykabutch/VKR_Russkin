@@ -22,14 +22,15 @@ services:
     image: mariadb:11.4
     container_name: vkr_russkin_mariadb
     hostname: vkr_russkin_mariadb
+    command: --bind-address=0.0.0.0
     environment:
       MARIADB_DATABASE: vkr_russkin
       MARIADB_USER: vkr_russkin
       MARIADB_PASSWORD: vkr_russkin_password
-      MARIADB_ROOT_PASSWORD: vkr_russkin_root_password
+      MARIADB_ROOT_PASSWORD: password
       MARIADB_ROOT_HOST: "%"
     ports:
-      - "127.0.0.1:5456:3306"
+      - "0.0.0.0:5456:3306"
     volumes:
       - vkr-russkin-mariadb-data:/var/lib/mysql
     healthcheck:
