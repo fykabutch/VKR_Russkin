@@ -1,7 +1,7 @@
 services:
-  web:
-    container_name: web-app-12_calculator-jenkins-3
-    hostname: 12_app
+  app:
+    container_name: vkr_russkin
+    hostname: vkr_russkin
     build:
       context: .
       dockerfile: Dockerfile
@@ -10,10 +10,33 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:5454
-      ConnectionStrings__DefaultConnection: "Data Source=/app/data/TeploenergetikaKursovaya.db"
+      DatabaseProvider: MariaDb
+      ConnectionStrings__DefaultConnection: "Server=db;Port=3306;Database=vkr_russkin;User=vkr_russkin;Password=vkr_russkin_password;CharSet=utf8mb4;"
+      DatabaseSeed__SqlitePath: "/app/seed/TeploenergetikaKursovaya.db"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: mariadb:11.4
+    container_name: vkr_russkin_mariadb
+    hostname: vkr_russkin_mariadb
+    environment:
+      MARIADB_DATABASE: vkr_russkin
+      MARIADB_USER: vkr_russkin
+      MARIADB_PASSWORD: vkr_russkin_password
+      MARIADB_ROOT_PASSWORD: vkr_russkin_root_password
+    ports:
+      - "127.0.0.1:3307:3306"
     volumes:
-      - teploenergetika-data:/app/data
+      - vkr-russkin-mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost -u$${MARIADB_USER} -p$${MARIADB_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
 volumes:
-  teploenergetika-data:
+  vkr-russkin-mariadb-data:

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Localization;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 using System.Globalization;
 using TeploenergetikaKursovaya.Data;
 using TeploenergetikaKursovaya.Services;
@@ -14,7 +16,18 @@ builder.Logging.AddDebug();
 builder.Services.AddControllersWithViews();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Data Source=TeploenergetikaKursovaya.db";
-builder.Services.AddDbContext<TeploDBContext>(o => o.UseSqlite(connectionString));
+var databaseProvider = builder.Configuration["DatabaseProvider"] ?? "Sqlite";
+builder.Services.AddDbContext<TeploDBContext>(o =>
+{
+    if (databaseProvider.Equals("MySql", StringComparison.OrdinalIgnoreCase)
+        || databaseProvider.Equals("MariaDb", StringComparison.OrdinalIgnoreCase))
+    {
+        o.UseMySql(connectionString, new MariaDbServerVersion(new Version(11, 4, 0)));
+        return;
+    }
+
+    o.UseSqlite(connectionString);
+});
 builder.Services.AddScoped<IPressureCalculationService, PressureCalculationService>();
 
 var app = builder.Build();
@@ -77,6 +90,13 @@ static void EnsureApplicationSchema(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<TeploDBContext>();
+    if (context.Database.ProviderName?.Contains("MySql", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        context.Database.EnsureCreated();
+        SeedReferenceDataFromSqlite(app, context);
+        return;
+    }
+
     context.Database.ExecuteSqlRaw("DROP TABLE IF EXISTS Variants;");
 
     context.Database.ExecuteSqlRaw("""
@@ -327,4 +347,231 @@ static void EnsureApplicationSchema(WebApplication app)
         );
         """);
     context.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_SavedCalculationNotices_SavedCalculationId ON SavedCalculationNotices (SavedCalculationId);");
+}
+
+static void SeedReferenceDataFromSqlite(WebApplication app, TeploDBContext targetContext)
+{
+    if (targetContext.LRCs.Any()
+        && targetContext.KVoAs.Any()
+        && targetContext.DotMCs.Any()
+        && targetContext.RoughnessMaterials.Any()
+        && targetContext.RoughnessConditions.Any()
+        && targetContext.Roughnesses.Any())
+    {
+        return;
+    }
+
+    var seedPath = app.Configuration["DatabaseSeed:SqlitePath"]
+        ?? Path.Combine(app.Environment.ContentRootPath, "seed", "TeploenergetikaKursovaya.db");
+
+    if (!File.Exists(seedPath))
+    {
+        app.Logger.LogWarning("SQLite seed database was not found at {SeedPath}. MariaDB reference tables were created empty.", seedPath);
+        return;
+    }
+
+    using var sourceConnection = new SqliteConnection($"Data Source={seedPath}");
+    sourceConnection.Open();
+
+    using var transaction = targetContext.Database.BeginTransaction();
+    if (!targetContext.LRCs.Any())
+    {
+        targetContext.LRCs.AddRange(ReadLrcs(sourceConnection));
+    }
+
+    if (!targetContext.KVoAs.Any())
+    {
+        targetContext.KVoAs.AddRange(ReadKvoas(sourceConnection));
+    }
+
+    if (!targetContext.DotMCs.Any())
+    {
+        targetContext.DotMCs.AddRange(ReadDotMcs(sourceConnection));
+    }
+
+    if (!targetContext.RoughnessMaterials.Any())
+    {
+        targetContext.RoughnessMaterials.AddRange(ReadRoughnessMaterials(sourceConnection));
+    }
+
+    if (!targetContext.RoughnessConditions.Any())
+    {
+        targetContext.RoughnessConditions.AddRange(ReadRoughnessConditions(sourceConnection));
+    }
+
+    targetContext.SaveChanges();
+
+    if (!targetContext.ResistanceDataPoints.Any() && targetContext.LRCs.Any())
+    {
+        targetContext.ResistanceDataPoints.AddRange(ReadResistanceDataPoints(sourceConnection));
+    }
+
+    if (!targetContext.Roughnesses.Any()
+        && targetContext.RoughnessMaterials.Any()
+        && targetContext.RoughnessConditions.Any())
+    {
+        targetContext.Roughnesses.AddRange(ReadRoughnesses(sourceConnection));
+    }
+
+    targetContext.SaveChanges();
+    transaction.Commit();
+}
+
+static List<LRC> ReadLrcs(SqliteConnection connection)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT Id, TypeofLR, ValueofLR, IsTabular FROM LRCs ORDER BY Id;";
+    using var reader = command.ExecuteReader();
+    var items = new List<LRC>();
+
+    while (reader.Read())
+    {
+        items.Add(new LRC
+        {
+            Id = reader.GetInt32(0),
+            TypeofLR = reader.GetString(1),
+            ValueofLR = ReadNullableDouble(reader, 2),
+            IsTabular = ReadBool(reader, 3)
+        });
+    }
+
+    return items;
+}
+
+static List<ResistanceDataPoint> ReadResistanceDataPoints(SqliteConnection connection)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT Id, ResistanceId, ParamX, ParamY, ZetaValue FROM ResistanceDataPoints ORDER BY Id;";
+    using var reader = command.ExecuteReader();
+    var items = new List<ResistanceDataPoint>();
+
+    while (reader.Read())
+    {
+        items.Add(new ResistanceDataPoint
+        {
+            Id = reader.GetInt32(0),
+            ResistanceId = reader.GetInt32(1),
+            ParamX = ReadDouble(reader, 2),
+            ParamY = ReadDouble(reader, 3),
+            ZetaValue = ReadDouble(reader, 4)
+        });
+    }
+
+    return items;
+}
+
+static List<KVoA> ReadKvoas(SqliteConnection connection)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT Id, GasTemperature, KinematicViscosity FROM KVoAs ORDER BY Id;";
+    using var reader = command.ExecuteReader();
+    var items = new List<KVoA>();
+
+    while (reader.Read())
+    {
+        items.Add(new KVoA
+        {
+            Id = reader.GetInt32(0),
+            GasTemperature = Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture),
+            KinematicViscosity = ReadDouble(reader, 2)
+        });
+    }
+
+    return items;
+}
+
+static List<DotMC> ReadDotMcs(SqliteConnection connection)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT Id, ComponentName, ComponentDensity FROM DotMCs ORDER BY Id;";
+    using var reader = command.ExecuteReader();
+    var items = new List<DotMC>();
+
+    while (reader.Read())
+    {
+        items.Add(new DotMC
+        {
+            Id = reader.GetInt32(0),
+            ComponentName = reader.IsDBNull(1) ? null : reader.GetString(1),
+            ComponentDensity = ReadDouble(reader, 2)
+        });
+    }
+
+    return items;
+}
+
+static List<RoughnessMaterial> ReadRoughnessMaterials(SqliteConnection connection)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT Id, Name FROM RoughnessMaterials ORDER BY Id;";
+    using var reader = command.ExecuteReader();
+    var items = new List<RoughnessMaterial>();
+
+    while (reader.Read())
+    {
+        items.Add(new RoughnessMaterial
+        {
+            Id = reader.GetInt32(0),
+            Name = reader.GetString(1)
+        });
+    }
+
+    return items;
+}
+
+static List<RoughnessCondition> ReadRoughnessConditions(SqliteConnection connection)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT Id, Name FROM RoughnessConditions ORDER BY Id;";
+    using var reader = command.ExecuteReader();
+    var items = new List<RoughnessCondition>();
+
+    while (reader.Read())
+    {
+        items.Add(new RoughnessCondition
+        {
+            Id = reader.GetInt32(0),
+            Name = reader.GetString(1)
+        });
+    }
+
+    return items;
+}
+
+static List<Roughness> ReadRoughnesses(SqliteConnection connection)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT Id, MaterialId, SurfaceConditionId, ReferenceValue FROM Roughnesses ORDER BY Id;";
+    using var reader = command.ExecuteReader();
+    var items = new List<Roughness>();
+
+    while (reader.Read())
+    {
+        items.Add(new Roughness
+        {
+            Id = reader.GetInt32(0),
+            MaterialId = reader.GetInt32(1),
+            SurfaceConditionId = reader.GetInt32(2),
+            ReferenceValue = reader.GetString(3)
+        });
+    }
+
+    return items;
+}
+
+static double ReadDouble(SqliteDataReader reader, int ordinal)
+{
+    return Convert.ToDouble(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+}
+
+static double? ReadNullableDouble(SqliteDataReader reader, int ordinal)
+{
+    return reader.IsDBNull(ordinal)
+        ? null
+        : Convert.ToDouble(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+}
+
+static bool ReadBool(SqliteDataReader reader, int ordinal)
+{
+    return !reader.IsDBNull(ordinal) && Convert.ToBoolean(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
 }
