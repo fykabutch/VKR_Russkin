@@ -117,6 +117,20 @@
     turnAngle: "deg",
     temperatureLossPerMeter: "cPerM"
   };
+  const numericSectionFields = new Set([
+    "diameter",
+    "diameterB",
+    "outletDiameter",
+    "outletDiameterB",
+    "localResistanceParamX",
+    "localResistanceParamY",
+    "length",
+    "heightDelta",
+    "customRoughness",
+    "customLrc",
+    "turnAngle",
+    "temperatureLossPerMeter"
+  ]);
 
   const state = {
     sections: [],
@@ -157,16 +171,16 @@
     SurfaceCondition: {
       title: "Состояние поверхности",
       essence: "Качество внутренней поверхности выбранного материала.",
-      logic: "Вместе с материалом определяет Kэ для расчета коэффициента трения."
+      logic: "Вместе с материалом определяет Δ для расчета коэффициента трения."
     },
     UseCustomRoughness: {
       title: "Собственная шероховатость трассы",
       essence: "Ручное значение эквивалентной шероховатости вместо справочника.",
-      logic: "Если включено, программа использует введенное Kэ для всей трассы, кроме блоков со своими настройками."
+      logic: "Если включено, программа использует введенное Δ для всей трассы, кроме блоков со своими настройками."
     },
     CustomRoughness: {
-      title: "Эквивалентная шероховатость",
-      essence: "Числовое значение Kэ, характеризующее неровность стенки канала.",
+      title: "Δ",
+      essence: "Числовое значение эквивалентной шероховатости, характеризующее неровность стенки канала.",
       logic: "Попадает в расчет коэффициента трения. Можно вводить в метрах или миллиметрах."
     },
     AmbientAirTemperature: {
@@ -422,7 +436,7 @@
 
       section[field] = event.target.type === "checkbox"
         ? event.target.checked
-        : sanitizeValue(event.target.value);
+        : normalizeSectionFieldValue(field, event.target.value);
 
       if (field === "useCustomLrc" && section.useCustomLrc && !section.customLrc) {
         section.customLrc = getAutoKmsValue(section);
@@ -438,12 +452,13 @@
     }
 
     if (field === "localResistanceType") {
-      applyTabularParameterDefaults(section);
+      applyTabularParameterDefaults(section, true);
     }
 
-    if (isConicalCollectorSection(section) || isStraightPipeEntranceSection(section)) {
+    if (isConicalCollectorSection(section) || isEntranceWithoutRouteLengthSection(section)) {
       updateDerivedLocalResistanceParams(section);
-      if (["diameter", "localResistanceType", "crossSectionShape"].includes(field)) {
+      if (["diameter", "localResistanceType", "crossSectionShape"].includes(field) ||
+          (isSuddenExpansionSection(section) && field === "localResistanceParamX")) {
         syncConicalCollectorOutletToNext(section);
       }
     }
@@ -452,6 +467,7 @@
         renderInspector();
       }
       updateAutoKmsField();
+      updateDerivedLocalResistanceDisplays(section);
       updateSectionRoughnessSummary(section);
 
     renderCanvas();
@@ -698,7 +714,7 @@
     const sectionIndex = state.sections.findIndex((item) => item.id === section.id) + 1;
     const isConicalCollector = section.kind === "LocalResistance" && isConicalCollectorType(section.localResistanceType);
     const isPipeEntrance = section.kind === "LocalResistance" && isStraightPipeEntranceType(section.localResistanceType);
-    const isRoundLockedLocalResistance = isConicalCollector || isPipeEntrance;
+    const isRoundLockedLocalResistance = isRoundLockedLocalResistanceSection(section);
     const shape = isRoundLockedLocalResistance ? "Round" : normalizeShape(section.crossSectionShape);
     const outletShape = normalizeShape(section.outletCrossSectionShape || shape);
     const surfaceOptions = renderOptions(getSurfaceOptions(section.materialType), section.surfaceCondition);
@@ -710,6 +726,8 @@
       ? "Форма фиксируется как круглое сечение для расчетного диаметра d₀."
       : isPipeEntrance
       ? "Форма фиксируется как круглое сечение: для расчета используется диаметр Dг прямой трубы."
+      : isRoundLockedLocalResistance
+      ? "Форма фиксируется как круглое сечение: для справочной таблицы используется диаметр Dг."
       : shape === "Rectangle"
       ? "Для прямоугольного канала программа автоматически вычисляет эквивалентный диаметр по формуле dэкв = 4S / П, где S = a·b, П = 2(a + b)."
       : "Для круглой трубы расчётный и эквивалентный диаметры совпадают.";
@@ -723,13 +741,13 @@
       '<div class="section-form">',
       '<div class="section-toggle-row">',
       renderToggle("useIndividualMaterial", section.useIndividualMaterial, "Индивидуальный материал блока"),
-      renderToggle("useCustomRoughness", section.useCustomRoughness, "Собственная шероховатость"),
+      renderToggle("useCustomRoughness", section.useCustomRoughness, "Собственная Δ"),
       "</div>",
       '<div class="section-form-grid">',
       renderTextField("Название блока", "blockTitle", section.blockTitle, "Например: участок после котла", true),
       isRoundLockedLocalResistance ? '<div class="section-form-subhead field-span-2">Основные параметры</div>' : "",
       renderNamedSelectField("Форма поперечного сечения", "crossSectionShape", shapeOptions, shape, isRoundLockedLocalResistance ? shapeHint : "Выберите геометрию входа этого конкретного участка.", isRoundLockedLocalResistance),
-      renderNumberField(getEntrySizeLabel(section), "diameter", section.diameter, "0.001", "0.001", "", getEntrySizeHint(section, inletHint), getSectionUnitOptions(section, "diameter"), false),
+      renderNumberField(getEntrySizeLabel(section), "diameter", section.diameter, "0.001", "0.001", "", getEntrySizeHint(section, inletHint), getSectionUnitOptions(section, "diameter"), false, getEntrySizeNote(section)),
       shape === "Rectangle"
         ? renderNumberField(getEntrySizeBLabel(section), "diameterB", section.diameterB, "0.001", "0.001", "", inletHint, getSectionUnitOptions(section, "diameterB"), false)
         : "",
@@ -784,7 +802,7 @@
     }
 
     if (section.useCustomRoughness) {
-      fields.push(renderNumberField("Индивидуальная шероховатость", "customRoughness", section.customRoughness, "0.000001", "0.000001", "0.1", "Это значение используется в расчёте вместо справочной шероховатости материала.", getSectionUnitOptions(section, "customRoughness")));
+      fields.push(renderNumberField("Индивидуальная Δ", "customRoughness", section.customRoughness, "0.000001", "0.000001", "0.1", "Это значение используется в расчёте вместо справочной шероховатости материала.", getSectionUnitOptions(section, "customRoughness")));
     }
 
     fields.push(`<div class="field field-span-2" data-role="section-roughness-summary">${buildRoughnessSummaryHtml(getRoughnessSelection(section, "section"))}</div>`);
@@ -1253,6 +1271,12 @@
           const resistanceItem = getLocalResistanceItem(section.localResistanceType);
           const isConical = isConicalCollectorType(section.localResistanceType);
           const isPipeEntrance = isStraightPipeEntranceType(section.localResistanceType);
+          const isFlushWallEntrance = isFlushWallEntranceType(section.localResistanceType);
+          const isPassingFlowEntrance = isPassingFlowEntranceType(section.localResistanceType);
+          const isArcWithoutScreen = isArcCollectorWithoutScreenType(section.localResistanceType);
+          const isArcWithScreen = isArcCollectorWithScreenType(section.localResistanceType);
+          const isRostrum = isRostrumCollectorType(section.localResistanceType);
+          const isSuddenExpansion = isSuddenExpansionType(section.localResistanceType);
           const resistanceContext = getResistanceParameterContext(section, resistanceItem);
           if (!resistanceItem) {
             messages.push(`В блоке «${title}» для типа «${section.localResistanceType}» не найдено значение КМС в таблице LRCs.`);
@@ -1262,7 +1286,21 @@
               ? `В блоке «${title}» для конического коллектора укажите выходной диаметр d₀, длину раструба l и угол α.`
               : isPipeEntrance
                 ? `В блоке «${title}» для входа в прямую трубу укажите диаметр Dг, расстояние b и толщину кромки δ₁.`
-                : `В блоке «${title}» для табличного сопротивления «${section.localResistanceType}» укажите угол α и отношение l/d₀.`);
+                : isArcWithoutScreen
+                  ? `В блоке «${title}» укажите диаметр Dг и радиус закругления r.`
+                : isArcWithScreen
+                  ? `В блоке «${title}» укажите диаметр Dг, расстояние h и радиус закругления r.`
+                : isRostrum
+                  ? `В блоке «${title}» укажите диаметр Dг, длину раструба l и угол α.`
+                : isSuddenExpansion
+                  ? `В блоке «${title}» укажите входной диаметр D₀ и выходной диаметр D₂.`
+                : isFlushWallEntrance
+                  ? `В блоке «${title}» укажите угол δ, длину входного участка l и характерный размер a.`
+                : isPassingFlowEntrance
+                  ? `В блоке «${title}» укажите скорость внешнего потока w∞ и угол δ.`
+                  : `В блоке «${title}» для табличного сопротивления «${section.localResistanceType}» укажите угол α и отношение l/d₀.`);
+          } else if (isSuddenExpansion && getLocalResistanceValue(section) == null) {
+            messages.push(`В блоке «${title}» для внезапного расширения выходной диаметр D₂ должен быть больше входного D₀.`);
           } else if (getLocalResistanceValue(section) == null) {
             messages.push(`В блоке «${title}» параметры сопротивления «${section.localResistanceType}» не попадают в расчетную таблицу LRCs.`);
           }
@@ -1730,9 +1768,9 @@
     const normalized = {
       id: readProp(rawSection, "id", "Id") || createId(),
       kind: kind,
-      crossSectionShape: sanitizeValue(readProp(rawSection, "crossSectionShape", "CrossSectionShape")),
-      outletCrossSectionShape: sanitizeValue(readProp(rawSection, "outletCrossSectionShape", "OutletCrossSectionShape")),
-      blockTitle: sanitizeValue(readProp(rawSection, "blockTitle", "BlockTitle")),
+      crossSectionShape: sanitizeTextValue(readProp(rawSection, "crossSectionShape", "CrossSectionShape")),
+      outletCrossSectionShape: sanitizeTextValue(readProp(rawSection, "outletCrossSectionShape", "OutletCrossSectionShape")),
+      blockTitle: sanitizeTextValue(readProp(rawSection, "blockTitle", "BlockTitle")),
       diameter: sanitizeValue(readProp(rawSection, "diameter", "Diameter")),
       diameterB: sanitizeValue(readProp(rawSection, "diameterB", "DiameterB")),
       outletDiameter: sanitizeValue(readProp(rawSection, "outletDiameter", "OutletDiameter")),
@@ -1741,14 +1779,14 @@
       temperatureLossPerMeter: sanitizeValue(readProp(rawSection, "temperatureLossPerMeter", "TemperatureLossPerMeter")),
       turnAngle: sanitizeValue(readProp(rawSection, "turnAngle", "TurnAngle")),
       heightDelta: sanitizeValue(readProp(rawSection, "heightDelta", "HeightDelta")),
-      localResistanceType: sanitizeValue(readProp(rawSection, "localResistanceType", "LocalResistanceType")),
+      localResistanceType: sanitizeTextValue(readProp(rawSection, "localResistanceType", "LocalResistanceType")),
       localResistanceParamX: sanitizeValue(readProp(rawSection, "localResistanceParamX", "LocalResistanceParamX")),
       localResistanceParamY: sanitizeValue(readProp(rawSection, "localResistanceParamY", "LocalResistanceParamY")),
       customLrc: sanitizeValue(readProp(rawSection, "customLrc", "CustomLRC")),
       useCustomLrc: Boolean(readProp(rawSection, "useCustomLrc", "UseCustomLRC")),
       useIndividualMaterial: Boolean(readProp(rawSection, "useIndividualMaterial", "UseIndividualMaterial")),
-      materialType: sanitizeValue(readProp(rawSection, "materialType", "MaterialType")),
-      surfaceCondition: sanitizeValue(readProp(rawSection, "surfaceCondition", "SurfaceCondition")),
+      materialType: sanitizeTextValue(readProp(rawSection, "materialType", "MaterialType")),
+      surfaceCondition: sanitizeTextValue(readProp(rawSection, "surfaceCondition", "SurfaceCondition")),
       useCustomRoughness: Boolean(readProp(rawSection, "useCustomRoughness", "UseCustomRoughness")),
       customRoughness: sanitizeValue(readProp(rawSection, "customRoughness", "CustomRoughness")),
       units: normalizeSectionUnits(readProp(rawSection, "units", "Units") || mapSectionUnitProps(rawSection))
@@ -1760,7 +1798,7 @@
   function ensureSection(section) {
     const defaults = kindMeta[section.kind].createDefaults();
     section.units = normalizeSectionUnits(section.units);
-    section.localResistanceType = section.localResistanceType || defaults.localResistanceType || "";
+    section.localResistanceType = canonicalizeLocalResistanceType(section.localResistanceType || defaults.localResistanceType || "");
     section.crossSectionShape = normalizeShape(section.crossSectionShape);
     if (section.kind === "LocalResistance" &&
         (isConicalCollectorType(section.localResistanceType) || isStraightPipeEntranceType(section.localResistanceType))) {
@@ -1926,7 +1964,19 @@
       return "Выходной диаметр d₀";
     }
 
+    if (isFlushWallEntranceSection(section)) {
+      return "Характерный размер a";
+    }
+
     if (isStraightPipeEntranceSection(section)) {
+      return "Диаметр Dг";
+    }
+
+    if (isSuddenExpansionSection(section)) {
+      return "Входной диаметр D₀";
+    }
+
+    if (isArcCollectorSection(section) || isRostrumCollectorSection(section)) {
       return "Диаметр Dг";
     }
 
@@ -1952,11 +2002,51 @@
       };
     }
 
+    if (isFlushWallEntranceSection(section)) {
+      return {
+        title: "Характерный размер a",
+        essence: "a — размер входного отверстия, с которым сравнивается длина входного участка l.",
+        logic: "Для круглого сечения a принимается как диаметр отверстия, для прямоугольного — как основная сторона входного сечения. Программа автоматически считает l/a."
+      };
+    }
+
+    if (isArcCollectorSection(section)) {
+      return {
+        title: "Диаметр Dг",
+        essence: "Dг — расчетный диаметр входного сечения коллектора.",
+        logic: "По этому диаметру программа автоматически считает отношения r/Dг и h/Dг для выбора КМС из таблицы."
+      };
+    }
+
+    if (isRostrumCollectorSection(section)) {
+      return {
+        title: "Диаметр Dг",
+        essence: "Dг — расчетный диаметр сечения на выходе раструба.",
+        logic: "По нему программа считает отношение l/Dг, которое используется в табличном КМС."
+      };
+    }
+
+    if (isSuddenExpansionSection(section)) {
+      return {
+        title: "Входной диаметр D₀",
+        essence: "D₀ — диаметр узкого сечения перед внезапным расширением.",
+        logic: "По D₀ и выходному диаметру D₂ программа считает площади F₀ и F₂, затем коэффициент ζ = (1 - F₀/F₂)²."
+      };
+    }
+
     return fallbackHint;
   }
 
+  function getEntrySizeNote(section) {
+    if (!isFlushWallEntranceSection(section)) {
+      return "";
+    }
+
+    return "a — характерный размер входного отверстия: для круглого сечения это диаметр, для прямоугольного — сторона a.";
+  }
+
   function getLengthLabel(section) {
-    return isConicalCollectorSection(section)
+    return isConicalCollectorSection(section) || isRostrumCollectorSection(section)
       ? "Длина раструба l"
       : "Длина элемента";
   }
@@ -1964,11 +2054,13 @@
   function getLengthHint(section) {
     return isConicalCollectorSection(section)
       ? "Длина раструба нужна для автоматического расчета отношения l/d₀ по таблице КМС."
+      : isRostrumCollectorSection(section)
+      ? "Длина раструба нужна для автоматического расчета отношения l/Dг по таблице КМС."
       : "Длина нужна для расчёта потерь на трение и итоговой протяжённости маршрута.";
   }
 
   function requiresSectionLength(section) {
-    return !isStraightPipeEntranceSection(section);
+    return !isEntranceWithoutRouteLengthSection(section);
   }
 
   function getEntrySizeBLabel(section) {
@@ -1997,6 +2089,8 @@
     if (section.diameter) {
       if (shape === "Rectangle") {
         parts.push(`a×b ${section.diameter}×${section.diameterB || "?"} ${getUnitLabel(getSectionUnit(section, "diameter"))}`);
+      } else if (isFlushWallEntranceSection(section)) {
+        parts.push(`a ${section.diameter} ${getUnitLabel(getSectionUnit(section, "diameter"))}`);
       } else if (isConicalCollectorSection(section)) {
         parts.push(`d₀ ${section.diameter} ${getUnitLabel(getSectionUnit(section, "diameter"))}`);
       } else {
@@ -2048,10 +2142,11 @@
     );
   }
 
-  function renderNumberField(label, field, value, step, min, max, hint, unitOptions, readonly) {
+  function renderNumberField(label, field, value, step, min, max, hint, unitOptions, readonly, note) {
     const attrs = [
       'class="form-control"',
-      'type="number"',
+      'type="text"',
+      'inputmode="decimal"',
       `data-field="${field}"`,
       `value="${escapeAttr(value || "")}"`,
       step ? `step="${step}"` : "",
@@ -2062,7 +2157,7 @@
     const inputHtml = `<input ${attrs}>`;
 
     if (!unitOptions) {
-      return renderRawField(label, inputHtml, hint, false);
+      return renderRawField(label, inputHtml, hint, false, note);
     }
 
     return renderRawField(
@@ -2074,7 +2169,8 @@
         "</div>"
       ].join(""),
       hint,
-      false
+      false,
+      note
     );
   }
 
@@ -2091,9 +2187,16 @@
     const isTabular = isTabularResistance(resistanceItem);
     const isConical = isConicalCollectorType(section.localResistanceType);
     const isPipeEntrance = isStraightPipeEntranceType(section.localResistanceType);
+    const isFlushWallEntrance = isFlushWallEntranceType(section.localResistanceType);
+    const isPassingFlowEntrance = isPassingFlowEntranceType(section.localResistanceType);
+    const isArcWithoutScreen = isArcCollectorWithoutScreenType(section.localResistanceType);
+    const isArcWithScreen = isArcCollectorWithScreenType(section.localResistanceType);
+    const isArcCollector = isArcCollectorType(section.localResistanceType);
+    const isSuddenExpansion = isSuddenExpansionType(section.localResistanceType);
+    const hasGuide = !section.useCustomLrc && (isTabular || isSuddenExpansion);
     const xConfig = getResistanceAxisConfig(section.localResistanceType, "x");
     const yConfig = getResistanceAxisConfig(section.localResistanceType, "y");
-    const guideButton = !section.useCustomLrc && isTabular
+    const guideButton = hasGuide
       ? [
           '<button type="button" class="kms-guide-button" data-open-resistance-table aria-haspopup="dialog" aria-label="Открыть таблицу КМС" title="Открыть таблицу КМС">',
           '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">',
@@ -2105,11 +2208,19 @@
       : "";
     const zetaHint = section.useCustomLrc
       ? "Замок открыт: пользовательское значение будет использовано вместо справочного."
-      : (isTabular
+      : (isSuddenExpansion
+          ? "Автоматический КМС рассчитывается по формуле внезапного расширения ζ = (1 - F₀/F₂)²."
+      : isTabular
           ? "Автоматический КМС интерполируется по табличным параметрам выбранного сопротивления."
           : "Замок закрыт: значение рассчитывается автоматически по выбранному типу местного сопротивления.");
-    const xUnitOptions = isPipeEntrance ? getSectionUnitOptions(section, "localResistanceParamX") : null;
-    const yUnitOptions = isPipeEntrance ? getSectionUnitOptions(section, "localResistanceParamY") : null;
+    const xUnitOptions = isPipeEntrance || isArcCollector || isSuddenExpansion ? getSectionUnitOptions(section, "localResistanceParamX") : null;
+    const yUnitOptions = isPipeEntrance || isFlushWallEntrance || isArcWithScreen ? getSectionUnitOptions(section, "localResistanceParamY") : null;
+    const yNote = isFlushWallEntrance
+      ? "l — длина входного участка в направлении движения газа. Программа делит l на размер a и получает отношение l/a."
+      : isArcWithScreen
+      ? "r — радиус очертания коллектора. Программа делит r на Dг и получает отношение r/Dг."
+      : "";
+    const shouldRenderY = !isConical && !isRostrumCollectorType(section.localResistanceType) && !isArcWithoutScreen;
 
     return [
       renderRawField(
@@ -2121,14 +2232,35 @@
       !section.useCustomLrc && isTabular
         ? renderNumberField(xConfig.label, "localResistanceParamX", section.localResistanceParamX, xConfig.step, xConfig.min, xConfig.max, `${xConfig.hint} ${describeTabularRange(resistanceItem, "x", section.localResistanceType)}`, xUnitOptions, false)
         : "",
+      !section.useCustomLrc && isSuddenExpansion
+        ? renderNumberField(xConfig.label, "localResistanceParamX", section.localResistanceParamX, xConfig.step, xConfig.min, xConfig.max, xConfig.hint, xUnitOptions, false)
+        : "",
+      !section.useCustomLrc && isSuddenExpansion
+        ? renderDerivedSuddenExpansionRatioField(section)
+        : "",
       !section.useCustomLrc && isTabular && isConical
         ? renderDerivedConicalRatioField(section, resistanceItem)
         : "",
-      !section.useCustomLrc && isTabular && !isConical
-        ? renderNumberField(yConfig.label, "localResistanceParamY", section.localResistanceParamY, yConfig.step, yConfig.min, yConfig.max, `${yConfig.hint} ${describeTabularRange(resistanceItem, "y", section.localResistanceType)}`, yUnitOptions, false)
+      !section.useCustomLrc && isTabular && isRostrumCollectorType(section.localResistanceType)
+        ? renderDerivedLengthRatioField(section, resistanceItem)
+        : "",
+      !section.useCustomLrc && isTabular && shouldRenderY
+        ? renderNumberField(yConfig.label, "localResistanceParamY", section.localResistanceParamY, yConfig.step, yConfig.min, yConfig.max, `${yConfig.hint} ${describeTabularRange(resistanceItem, "y", section.localResistanceType)}`, yUnitOptions, false, yNote)
         : "",
       !section.useCustomLrc && isTabular && isPipeEntrance
         ? renderDerivedPipeEntranceRatiosField(section, resistanceItem)
+        : "",
+      !section.useCustomLrc && isTabular && isFlushWallEntrance
+        ? renderDerivedFlushWallRatioField(section, resistanceItem)
+        : "",
+      !section.useCustomLrc && isTabular && isPassingFlowEntrance
+        ? renderDerivedPassingFlowRatioField(section, resistanceItem)
+        : "",
+      !section.useCustomLrc && isTabular && isArcWithoutScreen
+        ? renderDerivedArcCollectorRatioField(section, resistanceItem)
+        : "",
+      !section.useCustomLrc && isTabular && isArcWithScreen
+        ? renderDerivedArcCollectorRatiosField(section, resistanceItem)
         : "",
       renderKmsValueField(section, guideButton, zetaHint)
       ].join("");
@@ -2143,9 +2275,22 @@
 
     return renderRawField(
       "Расчетное отношение l/d₀",
-      `<input class="form-control kms-input is-locked" type="text" readonly value="${escapeAttr(value || "—")}">`,
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-conical-ratio" value="${escapeAttr(value || "—")}">`,
       hint,
       false
+    );
+  }
+
+  function renderDerivedLengthRatioField(section, resistanceItem) {
+    const context = getResistanceParameterContext(section, resistanceItem);
+    const yConfig = getResistanceAxisConfig(section.localResistanceType, "y");
+    const value = context.rawParamY == null ? "—" : formatCompactNumber(context.rawParamY, 3);
+
+    return renderRawField(
+      `Расчетное отношение ${stripHtml(yConfig.summaryLabel)}`,
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-length-ratio" value="${escapeAttr(`${stripHtml(yConfig.summaryLabel)} = ${value}`)}">`,
+      `Программа считает ${stripHtml(yConfig.summaryLabel)} автоматически по введенным длине l и диаметру Dг. ${describeTabularRange(resistanceItem, "y", section.localResistanceType)}`,
+      true
     );
   }
 
@@ -2167,10 +2312,144 @@
 
     return renderRawField(
       "Расчетные отношения",
-      `<input class="form-control kms-input is-locked" type="text" readonly value="${escapeAttr(`b/Dг = ${ratioX}; δ₁/Dг = ${ratioY}`)}">`,
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-pipe-entrance-ratios" value="${escapeAttr(`b/Dг = ${ratioX}; δ₁/Dг = ${ratioY}`)}">`,
       hintParts.join(" "),
       true
     );
+  }
+
+  function renderDerivedFlushWallRatioField(section, resistanceItem) {
+    const context = getResistanceParameterContext(section, resistanceItem);
+    const ratio = context.rawParamY == null ? "—" : formatCompactNumber(context.rawParamY, 3);
+    const hintParts = [
+      "Программа считает l/a = l / a автоматически по введенным размерам."
+    ];
+
+    return renderRawField(
+      "Расчетное отношение l/a",
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-flush-wall-ratio" value="${escapeAttr(`l/a = ${ratio}`)}">`,
+      hintParts.join(" "),
+      true
+    );
+  }
+
+  function renderDerivedPassingFlowRatioField(section, resistanceItem) {
+    const context = getResistanceParameterContext(section, resistanceItem);
+    const ratio = context.rawParamX == null ? "—" : formatCompactNumber(context.rawParamX, 3);
+    const flowVelocity = context.flowVelocity == null ? "—" : formatCompactNumber(context.flowVelocity, 3);
+    const hint = `w₀ = Q/F = ${flowVelocity} м/с. Программа считает w∞/w₀ автоматически и использует это отношение в таблице. ${describeTabularRange(resistanceItem, "x", section.localResistanceType)}`;
+
+    return renderRawField(
+      "Расчетное отношение w∞/w₀",
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-passing-flow-ratio" value="${escapeAttr(`w∞/w₀ = ${ratio}`)}">`,
+      hint,
+      true
+    );
+  }
+
+  function renderDerivedArcCollectorRatioField(section, resistanceItem) {
+    const context = getResistanceParameterContext(section, resistanceItem);
+    const ratio = context.rawParamX == null ? "—" : formatCompactNumber(context.rawParamX, 3);
+    const hintParts = [
+      "Программа считает r/Dг = r / Dг автоматически."
+    ];
+
+    if (context.xClamped) {
+      hintParts.push(`r/Dг выше диапазона таблицы; используется последняя колонка ${formatResistanceAxisValue(section.localResistanceType, "x", context.paramX)}.`);
+    }
+
+    return renderRawField(
+      "Расчетное отношение r/Dг",
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-arc-ratio" value="${escapeAttr(`r/Dг = ${ratio}`)}">`,
+      `${hintParts.join(" ")} ${describeTabularRange(resistanceItem, "x", section.localResistanceType)}`,
+      true
+    );
+  }
+
+  function renderDerivedArcCollectorRatiosField(section, resistanceItem) {
+    const context = getResistanceParameterContext(section, resistanceItem);
+    const ratioX = context.rawParamX == null ? "—" : formatCompactNumber(context.rawParamX, 3);
+    const ratioY = context.rawParamY == null ? "—" : formatCompactNumber(context.rawParamY, 3);
+
+    return renderRawField(
+      "Расчетные отношения",
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-arc-ratios" value="${escapeAttr(`h/Dг = ${ratioX}; r/Dг = ${ratioY}`)}">`,
+      "Программа считает h/Dг и r/Dг автоматически по введенным размерам h, r и диаметру Dг.",
+      true
+    );
+  }
+
+  function renderDerivedSuddenExpansionRatioField(section) {
+    const ratio = calculateSuddenExpansionAreaRatio(section);
+    const ratioText = ratio == null ? "—" : formatCompactNumber(ratio, 3);
+
+    return renderRawField(
+      "Расчетное отношение F₀/F₂",
+      `<input class="form-control kms-input is-locked" type="text" readonly data-role="derived-sudden-expansion-ratio" value="${escapeAttr(`F₀/F₂ = ${ratioText}`)}">`,
+      "Программа считает площади по диаметрам D₀ и D₂, затем применяет формулу ζ = (1 - F₀/F₂)².",
+      true
+    );
+  }
+
+  function updateDerivedLocalResistanceDisplays(section) {
+    const item = getLocalResistanceItem(section && section.localResistanceType);
+    const conicalRatioInput = document.querySelector('[data-role="derived-conical-ratio"]');
+    if (conicalRatioInput && isConicalCollectorSection(section)) {
+      const context = getResistanceParameterContext(section, item);
+      conicalRatioInput.value = context.rawParamY == null
+        ? "—"
+        : formatCompactNumber(context.rawParamY, 3);
+    }
+
+    const pipeRatiosInput = document.querySelector('[data-role="derived-pipe-entrance-ratios"]');
+    if (pipeRatiosInput && isStraightPipeEntranceSection(section)) {
+      const context = getResistanceParameterContext(section, item);
+      const ratioX = context.rawParamX == null ? "—" : formatCompactNumber(context.rawParamX, 3);
+      const ratioY = context.rawParamY == null ? "—" : formatCompactNumber(context.rawParamY, 3);
+      pipeRatiosInput.value = `b/Dг = ${ratioX}; δ₁/Dг = ${ratioY}`;
+    }
+
+    const flushWallRatioInput = document.querySelector('[data-role="derived-flush-wall-ratio"]');
+    if (flushWallRatioInput && isFlushWallEntranceSection(section)) {
+      const context = getResistanceParameterContext(section, item);
+      const ratio = context.rawParamY == null ? "—" : formatCompactNumber(context.rawParamY, 3);
+      flushWallRatioInput.value = `l/a = ${ratio}`;
+    }
+
+    const lengthRatioInput = document.querySelector('[data-role="derived-length-ratio"]');
+    if (lengthRatioInput && isRostrumCollectorSection(section)) {
+      const context = getResistanceParameterContext(section, item);
+      const ratio = context.rawParamY == null ? "—" : formatCompactNumber(context.rawParamY, 3);
+      lengthRatioInput.value = `l/Dг = ${ratio}`;
+    }
+
+    const passingFlowRatioInput = document.querySelector('[data-role="derived-passing-flow-ratio"]');
+    if (passingFlowRatioInput && isPassingFlowEntranceSection(section)) {
+      const context = getResistanceParameterContext(section, item);
+      const ratio = context.rawParamX == null ? "—" : formatCompactNumber(context.rawParamX, 3);
+      passingFlowRatioInput.value = `w∞/w₀ = ${ratio}`;
+    }
+
+    const arcRatioInput = document.querySelector('[data-role="derived-arc-ratio"]');
+    if (arcRatioInput && isArcCollectorWithoutScreenSection(section)) {
+      const context = getResistanceParameterContext(section, item);
+      const ratio = context.rawParamX == null ? "—" : formatCompactNumber(context.rawParamX, 3);
+      arcRatioInput.value = `r/Dг = ${ratio}`;
+    }
+
+    const arcRatiosInput = document.querySelector('[data-role="derived-arc-ratios"]');
+    if (arcRatiosInput && isArcCollectorWithScreenSection(section)) {
+      const context = getResistanceParameterContext(section, item);
+      const ratioX = context.rawParamX == null ? "—" : formatCompactNumber(context.rawParamX, 3);
+      const ratioY = context.rawParamY == null ? "—" : formatCompactNumber(context.rawParamY, 3);
+      arcRatiosInput.value = `h/Dг = ${ratioX}; r/Dг = ${ratioY}`;
+    }
+
+    const suddenExpansionRatioInput = document.querySelector('[data-role="derived-sudden-expansion-ratio"]');
+    if (suddenExpansionRatioInput && isSuddenExpansionSection(section)) {
+      const ratio = calculateSuddenExpansionAreaRatio(section);
+      suddenExpansionRatioInput.value = `F₀/F₂ = ${ratio == null ? "—" : formatCompactNumber(ratio, 3)}`;
+    }
   }
 
   function renderKmsValueField(section, guideButton, zetaHint) {
@@ -2210,11 +2489,31 @@
       return localResistanceCatalog[normalizedName];
     }
 
-    const lowerName = normalizedName.toLowerCase();
+    const lowerName = normalizeResistanceLookupName(normalizedName).toLowerCase();
     const matchedKey = Object.keys(localResistanceCatalog)
-      .find((key) => String(key || "").trim().toLowerCase() === lowerName);
+      .find((key) => normalizeResistanceLookupName(key).toLowerCase() === lowerName);
 
     return matchedKey ? localResistanceCatalog[matchedKey] : null;
+  }
+
+  function normalizeResistanceLookupName(typeName) {
+    return String(typeName || "")
+      .trim()
+      .replace(/\s*\(диаграмма 3-[1-7]\)\s*$/i, "")
+      .replace(/\s*\(диаграмма 4-1\)\s*$/i, "")
+      .trim();
+  }
+
+  function canonicalizeLocalResistanceType(typeName) {
+    const normalizedName = normalizeResistanceLookupName(typeName);
+    if (!normalizedName) {
+      return "";
+    }
+
+    const matched = localResistanceTypes.find((item) =>
+      normalizeResistanceLookupName(item).toLowerCase() === normalizedName.toLowerCase());
+
+    return matched || typeName;
   }
 
   function isTabularResistance(item) {
@@ -2248,6 +2547,12 @@
   function getResistanceAxisConfig(typeName, axis) {
     const isConical = isConicalCollectorType(typeName);
     const isPipeEntrance = isStraightPipeEntranceType(typeName);
+    const isDiagram32Entrance = isFlushWallEntranceType(typeName);
+    const isDiagram33Entrance = isPassingFlowEntranceType(typeName);
+    const isArcWithoutScreen = isArcCollectorWithoutScreenType(typeName);
+    const isArcWithScreen = isArcCollectorWithScreenType(typeName);
+    const isRostrum = isRostrumCollectorType(typeName);
+    const isSuddenExpansion = isSuddenExpansionType(typeName);
 
     if (isPipeEntrance) {
       return axis === "x"
@@ -2275,13 +2580,147 @@
           };
     }
 
+    if (isDiagram32Entrance) {
+      return axis === "x"
+        ? {
+            label: "Угол входа δ",
+            step: "1",
+            min: "20",
+            max: "90",
+            hint: "δ — угол входа потока в трубу, градусы. Диаграмма 3-2 применима при δ от 20 до 90°.",
+            digits: 0,
+            summaryLabel: "δ",
+            tableLabel: "δ, град",
+            clampLabel: "δ",
+            suffix: "град"
+          }
+        : {
+            label: "Длина входного участка l",
+            step: "0.001",
+            min: "0",
+            max: "",
+            hint: "l — длина входного участка. Отношение l/a программа считает автоматически по введенному размеру a. Табличный диапазон расчетного отношения l/a: 0,2...5; для области 0,2...0,5 используется одна строка значений.",
+            digits: 3,
+            summaryLabel: "l/a",
+            tableLabel: "l/a",
+            clampLabel: "l/a"
+          };
+    }
+
+    if (isDiagram33Entrance) {
+      return axis === "x"
+        ? {
+            label: "Скорость внешнего потока w∞",
+            step: "0.001",
+            min: "0",
+            max: "",
+            hint: "w∞ — скорость проходящего внешнего потока около входа, м/с. w₀ программа считает сама по расходу газа и площади входного сечения, затем получает отношение w∞/w₀. Если внешнего потока нет, введите 0.",
+            digits: 3,
+            summaryLabel: "w<sub>∞</sub>/w<sub>0</sub>",
+            tableLabel: "w<sub>∞</sub>/w<sub>0</sub>",
+            clampLabel: "w∞/w₀"
+          }
+        : {
+            label: "Угол входа δ",
+            step: "1",
+            min: "30",
+            max: "150",
+            hint: "δ — угол между направлением проходящего потока и входом в трубу, градусы. Диаграмма 3-3 применима при δ от 30 до 150°.",
+            digits: 0,
+            summaryLabel: "δ",
+            tableLabel: "δ, град",
+            clampLabel: "δ",
+            suffix: "град"
+          };
+    }
+
+    if (isArcWithoutScreen) {
+      return axis === "x"
+        ? {
+            label: "Радиус закругления r",
+            step: "0.001",
+            min: "0",
+            max: "",
+            hint: "r — радиус очертания входного коллектора по дуге круга. Программа делит r на Dг и выбирает КМС из таблицы; при r/Dг ≥ 0,20 используется последняя колонка.",
+            digits: 3,
+            summaryLabel: "r/D<sub>г</sub>",
+            tableLabel: "r/D<sub>г</sub>",
+            clampLabel: "r/Dг"
+          }
+        : {
+            label: "Служебный параметр",
+            step: "1",
+            min: "0",
+            max: "0",
+            hint: "",
+            digits: 0,
+            summaryLabel: "",
+            tableLabel: "",
+            clampLabel: ""
+          };
+    }
+
+    if (isArcWithScreen) {
+      return axis === "x"
+        ? {
+            label: "Расстояние до экрана h",
+            step: "0.001",
+            min: "0",
+            max: "",
+            hint: "h — расстояние от входного сечения до экрана. Программа считает отношение h/Dг автоматически.",
+            digits: 3,
+            summaryLabel: "h/D<sub>г</sub>",
+            tableLabel: "h/D<sub>г</sub>",
+            clampLabel: "h/Dг"
+          }
+        : {
+            label: "Радиус закругления r",
+            step: "0.001",
+            min: "0",
+            max: "",
+            hint: "r — радиус очертания коллектора по дуге круга. Программа считает отношение r/Dг автоматически.",
+            digits: 3,
+            summaryLabel: "r/D<sub>г</sub>",
+            tableLabel: "r/D<sub>г</sub>",
+            clampLabel: "r/Dг"
+          };
+    }
+
+    if (isSuddenExpansion) {
+      return axis === "x"
+        ? {
+            label: "Выходной диаметр D₂",
+            step: "0.001",
+            min: "0.001",
+            max: "",
+            hint: "D₂ — диаметр широкого сечения после внезапного расширения. Он должен быть больше входного D₀; программа считает F₀/F₂ и ζ = (1 - F₀/F₂)².",
+            digits: 3,
+            summaryLabel: "F<sub>0</sub>/F<sub>2</sub>",
+            tableLabel: "F<sub>0</sub>/F<sub>2</sub>",
+            clampLabel: "F₀/F₂"
+          }
+        : {
+            label: "",
+            step: "1",
+            min: "",
+            max: "",
+            hint: "",
+            digits: 3,
+            summaryLabel: "",
+            tableLabel: "",
+            clampLabel: ""
+          };
+    }
+
     if (axis === "x") {
       return {
         label: isConical ? "Угол раскрытия α" : "Угол α",
         step: "1",
         min: "0",
         max: "180",
-        hint: "Угол α, градусы.",
+        hint: isRostrum
+          ? "α — угол раскрытия раструба, градусы. Табличный диапазон: 0...180°."
+          : "Угол α, градусы.",
         digits: 0,
         summaryLabel: "α",
         tableLabel: "α, град",
@@ -2291,15 +2730,15 @@
     }
 
     return {
-      label: "Отношение l/d₀",
+      label: isRostrum ? "Отношение l/Dг" : "Отношение l/d₀",
       step: "0.001",
       min: "0",
       max: "",
-      hint: "Безразмерное отношение l/d₀.",
+      hint: isRostrum ? "Безразмерное отношение l/Dг." : "Безразмерное отношение l/d₀.",
       digits: 3,
-      summaryLabel: "l/d<sub>0</sub>",
-      tableLabel: "l/d<sub>0</sub>",
-      clampLabel: "l/d₀"
+      summaryLabel: isRostrum ? "l/D<sub>г</sub>" : "l/d<sub>0</sub>",
+      tableLabel: isRostrum ? "l/D<sub>г</sub>" : "l/d<sub>0</sub>",
+      clampLabel: isRostrum ? "l/Dг" : "l/d₀"
     };
   }
 
@@ -2406,20 +2845,50 @@
 
     const config = getResistanceAxisConfig(typeName, axis);
     const isPipeEntrance = isStraightPipeEntranceType(typeName);
-    const rangeSubject = isPipeEntrance
+    const isArcWithoutScreen = isArcCollectorWithoutScreenType(typeName);
+    const isArcWithScreen = isArcCollectorWithScreenType(typeName);
+    const isDerivedRatioAxis = isPipeEntrance ||
+      isArcWithScreen ||
+      (isArcWithoutScreen && axis === "x") ||
+      (isFlushWallEntranceType(typeName) && axis === "y") ||
+      (isPassingFlowEntranceType(typeName) && axis === "x") ||
+      (isRostrumCollectorType(typeName) && axis === "y");
+    const rangeSubject = isDerivedRatioAxis
       ? `расчетного отношения ${config.clampLabel}: `
       : "";
-    const clampHint = isPipeEntrance
+    const clampHint = isPipeEntrance || isArcWithoutScreen
       ? ` Значения выше ${formatNumber(values[values.length - 1], config.digits)} считаются как ${formatNumber(values[values.length - 1], config.digits)}.`
       : "";
 
     return `Диапазон ${rangeSubject}${formatNumber(values[0], config.digits)}...${formatNumber(values[values.length - 1], config.digits)}.${clampHint}`;
   }
 
-  function applyTabularParameterDefaults(section) {
+  function applyTabularParameterDefaults(section, resetExisting) {
     const item = getLocalResistanceItem(section.localResistanceType);
+    if (isSuddenExpansionType(section.localResistanceType)) {
+      if (resetExisting) {
+        section.localResistanceParamX = "";
+        section.localResistanceParamY = "";
+      }
+
+      if (!section.localResistanceParamX) {
+        const inletDiameter = parseNumber(getSectionBaseValue(section, "diameter"), null);
+        if (inletDiameter != null && inletDiameter > 0) {
+          setSectionDisplayValueFromBase(section, "localResistanceParamX", inletDiameter * 1.5);
+        }
+      }
+
+      updateDerivedLocalResistanceParams(section);
+      return;
+    }
+
     if (!isTabularResistance(item)) {
       return;
+    }
+
+    if (resetExisting) {
+      section.localResistanceParamX = "";
+      section.localResistanceParamY = "";
     }
 
     if (isStraightPipeEntranceType(section.localResistanceType)) {
@@ -2433,19 +2902,54 @@
     const xs = uniqueSorted(points.map((point) => readPointNumber(point, "paramX", "ParamX")));
     const ys = uniqueSorted(points.map((point) => readPointNumber(point, "paramY", "ParamY")));
     if (!section.localResistanceParamX && xs.length) {
-      const defaultX = xs.includes(60) ? 60 : xs[Math.floor(xs.length / 2)];
-      section.localResistanceParamX = formatForInput(defaultX);
+      const defaultX = isPassingFlowEntranceType(section.localResistanceType) && xs.includes(1)
+        ? 1
+        : xs.includes(60) ? 60 : xs[Math.floor(xs.length / 2)];
+      if (isPassingFlowEntranceType(section.localResistanceType)) {
+        const flowVelocity = calculateLocalFlowVelocity(section);
+        section.localResistanceParamX = formatForInput(flowVelocity != null && flowVelocity > 0
+          ? flowVelocity * defaultX
+          : defaultX);
+      } else if (isArcCollectorType(section.localResistanceType)) {
+        const diameter = parseNumber(getSectionBaseValue(section, "diameter"), null);
+        if (diameter != null && diameter > 0) {
+          setSectionDisplayValueFromBase(section, "localResistanceParamX", diameter * defaultX);
+        } else {
+          section.localResistanceParamX = formatForInput(defaultX);
+        }
+      } else {
+        section.localResistanceParamX = formatForInput(defaultX);
+      }
     }
-    if (!isConicalCollectorSection(section) && !section.localResistanceParamY && ys.length) {
+    if (!isLengthRatioCollectorSection(section) &&
+        !isArcCollectorWithoutScreenSection(section) &&
+        !section.localResistanceParamY &&
+        ys.length) {
       const defaultY = ys.includes(0.25) ? 0.25 : ys[Math.floor(ys.length / 2)];
-      section.localResistanceParamY = formatForInput(defaultY);
+      if (isFlushWallEntranceSection(section)) {
+        const sizeA = parseNumber(getSectionBaseValue(section, "diameter"), null);
+        if (sizeA != null && sizeA > 0) {
+          setSectionDisplayValueFromBase(section, "localResistanceParamY", sizeA * defaultY);
+        } else {
+          section.localResistanceParamY = formatForInput(defaultY);
+        }
+      } else if (isArcCollectorWithScreenSection(section)) {
+        const diameter = parseNumber(getSectionBaseValue(section, "diameter"), null);
+        if (diameter != null && diameter > 0) {
+          setSectionDisplayValueFromBase(section, "localResistanceParamY", diameter * defaultY);
+        } else {
+          section.localResistanceParamY = formatForInput(defaultY);
+        }
+      } else {
+        section.localResistanceParamY = formatForInput(defaultY);
+      }
     }
     updateDerivedLocalResistanceParams(section);
   }
 
   function showResistanceGuide(section) {
     const item = getLocalResistanceItem(section.localResistanceType);
-    if (!isTabularResistance(item)) {
+    if (!isTabularResistance(item) && !isSuddenExpansionSection(section)) {
       return;
     }
 
@@ -2496,6 +3000,10 @@
   }
 
   function buildResistanceGuideHtml(section, item) {
+    if (isSuddenExpansionSection(section)) {
+      return buildSuddenExpansionGuideHtml(section);
+    }
+
     const context = getResistanceParameterContext(section, item);
     const paramX = context.rawParamX;
     const paramY = context.rawParamY;
@@ -2504,14 +3012,23 @@
     const xConfig = getResistanceAxisConfig(section.localResistanceType, "x");
     const yConfig = getResistanceAxisConfig(section.localResistanceType, "y");
     const isPipeEntrance = isStraightPipeEntranceSection(section);
+    const isPassingFlowEntrance = isPassingFlowEntranceSection(section);
+    const isArcWithoutScreen = isArcCollectorWithoutScreenSection(section);
+    const isArcWithScreen = isArcCollectorWithScreenSection(section);
     return [
       '<div class="resistance-guide-layout">',
       image
-        ? `<figure class="resistance-guide-figure"><img src="${escapeAttr(image)}" alt="Схема конического коллектора"></figure>`
+        ? `<figure class="resistance-guide-figure"><img src="${escapeAttr(image)}" alt="Схема выбранного местного сопротивления"></figure>`
         : "",
       '<div class="resistance-guide-summary">',
       isPipeEntrance
         ? buildPipeEntranceSummaryParams(context, xConfig, yConfig)
+        : isPassingFlowEntrance
+        ? buildPassingFlowSummaryParams(context, xConfig, yConfig)
+        : isArcWithoutScreen
+        ? buildArcWithoutScreenSummaryParams(context, xConfig)
+        : isArcWithScreen
+        ? buildArcWithScreenSummaryParams(context, xConfig, yConfig)
         : [
             buildResistanceSummaryParam(xConfig, paramX),
             buildResistanceSummaryParam(yConfig, paramY)
@@ -2529,6 +3046,41 @@
     ].join("");
   }
 
+  function buildSuddenExpansionGuideHtml(section) {
+    const zeta = calculateSuddenExpansionKms(section);
+    const ratio = calculateSuddenExpansionAreaRatio(section);
+    const inletDiameter = parseNumber(getSectionBaseValue(section, "diameter"), null);
+    const outletDiameter = parseNumber(getSectionBaseValue(section, "localResistanceParamX"), null);
+    const image = getResistanceGuideImage(section.localResistanceType);
+
+    return [
+      '<div class="resistance-guide-layout">',
+      image
+        ? `<figure class="resistance-guide-figure"><img src="${escapeAttr(image)}" alt="Схема внезапного расширения сечения"></figure>`
+        : "",
+      '<div class="resistance-guide-summary">',
+      `<span class="resistance-guide-param"><span>D<sub>0</sub> =</span><strong>${formatCompactNumber(inletDiameter, 3)}</strong><span>м</span></span>`,
+      `<span class="resistance-guide-param"><span>D<sub>2</sub> =</span><strong>${formatCompactNumber(outletDiameter, 3)}</strong><span>м</span></span>`,
+      `<span class="resistance-guide-param"><span>F<sub>0</sub>/F<sub>2</sub> =</span><strong>${formatCompactNumber(ratio, 3)}</strong></span>`,
+      `<span class="resistance-guide-param"><span>ζ =</span><strong>${zeta == null ? "—" : formatCompactNumber(zeta, 3)}</strong></span>`,
+      "</div>",
+      "</div>",
+      '<div class="resistance-guide-formula">',
+      '<strong>Расчет:</strong> ζ = (1 - F<sub>0</sub>/F<sub>2</sub>)². Площадь круглого сечения считается по диаметру.',
+      '<br><span>Условие применения: Re &gt; 10<sup>4</sup>, равномерный профиль скорости перед расширением. Потери трения после расширения учитываются отдельным прямым участком трассы.</span>',
+      "</div>"
+    ].join("");
+  }
+
+  function buildPassingFlowSummaryParams(context, xConfig, yConfig) {
+    return [
+      `<span class="resistance-guide-param"><span>w<sub>0</sub> =</span><strong>${formatCompactNumber(context.flowVelocity, 3)}</strong><span>м/с</span></span>`,
+      `<span class="resistance-guide-param"><span>w<sub>∞</sub> =</span><strong>${formatCompactNumber(context.inputParamX, 3)}</strong><span>м/с</span></span>`,
+      buildResistanceSummaryParam(xConfig, context.rawParamX),
+      buildResistanceSummaryParam(yConfig, context.rawParamY)
+    ].join("");
+  }
+
   function buildPipeEntranceSummaryParams(context, xConfig, yConfig) {
     return [
       `<span class="resistance-guide-param"><span>D<sub>г</sub> =</span><strong>${formatCompactNumber(context.diameter, 3)}</strong><span>м</span></span>`,
@@ -2538,6 +3090,25 @@
       buildResistanceSummaryParam(yConfig, context.rawParamY)
     ].join("");
   }
+
+  function buildArcWithoutScreenSummaryParams(context, xConfig) {
+    return [
+      `<span class="resistance-guide-param"><span>D<sub>г</sub> =</span><strong>${formatCompactNumber(context.diameter, 3)}</strong><span>м</span></span>`,
+      `<span class="resistance-guide-param"><span>r =</span><strong>${formatCompactNumber(context.inputParamX, 3)}</strong><span>м</span></span>`,
+      buildResistanceSummaryParam(xConfig, context.rawParamX)
+    ].join("");
+  }
+
+  function buildArcWithScreenSummaryParams(context, xConfig, yConfig) {
+    return [
+      `<span class="resistance-guide-param"><span>D<sub>г</sub> =</span><strong>${formatCompactNumber(context.diameter, 3)}</strong><span>м</span></span>`,
+      `<span class="resistance-guide-param"><span>h =</span><strong>${formatCompactNumber(context.inputParamX, 3)}</strong><span>м</span></span>`,
+      `<span class="resistance-guide-param"><span>r =</span><strong>${formatCompactNumber(context.inputParamY, 3)}</strong><span>м</span></span>`,
+      buildResistanceSummaryParam(xConfig, context.rawParamX),
+      buildResistanceSummaryParam(yConfig, context.rawParamY)
+    ].join("");
+  }
+
 
   function buildResistanceSummaryParam(config, value) {
     const suffix = config.suffix ? `<span>${escapeHtml(config.suffix)}</span>` : "";
@@ -2558,6 +3129,34 @@
     const zetaHeader = isConicalCollectorType(section.localResistanceType)
       ? "ζ<sub>0</sub>"
       : "ζ";
+    if (isArcCollectorWithoutScreenType(section.localResistanceType)) {
+      const bodyCells = xs.map((x) => {
+        const zeta = findPointZeta(points, x, 0);
+        const isSource = selection && isValueWithinBounds(x, selection.xBounds);
+        const exact = isSource && selection.isExact;
+        const className = isSource ? ` class="${exact ? "is-source is-exact" : "is-source"}"` : "";
+        return `<td${className}>${zeta == null ? "—" : formatCompactNumber(zeta, 3)}</td>`;
+      }).join("");
+      const headerCells = xs
+        .map((x) => {
+          const sourceClass = selection && isValueWithinBounds(x, selection.xBounds) ? " class=\"is-source-axis\"" : "";
+          return `<th scope="col"${sourceClass}>${formatResistanceAxisValue(section.localResistanceType, "x", x)}</th>`;
+        })
+        .join("");
+
+      return [
+        '<div class="resistance-table-wrap">',
+        '<table class="resistance-guide-table">',
+        "<thead>",
+        `<tr><th class="resistance-guide-title-cell" scope="col" colspan="${xs.length}">Значение ${zetaHeader} при ${xConfig.tableLabel}</th></tr>`,
+        `<tr>${headerCells}</tr>`,
+        "</thead>",
+        `<tbody><tr>${bodyCells}</tr></tbody>`,
+        "</table>",
+        "</div>"
+      ].join("");
+    }
+
     const headerCells = xs
       .map((x) => {
         const sourceClass = selection && isValueWithinBounds(x, selection.xBounds) ? " class=\"is-source-axis\"" : "";
@@ -2595,7 +3194,7 @@
 
   function formatResistanceAxisValue(typeName, axis, value) {
     const config = getResistanceAxisConfig(typeName, axis);
-    const parsed = Number(value);
+    const parsed = parseNumber(value, null);
     if (!Number.isFinite(parsed)) {
       return "—";
     }
@@ -2608,6 +3207,10 @@
       if (axis === "y" && parsed >= 0.05 - 0.000001) {
         return `≥${formatNumber(0.05, config.digits)}`;
       }
+    }
+
+    if (isArcCollectorWithoutScreenType(typeName) && axis === "x" && parsed >= 0.2 - 0.000001) {
+      return `≥${formatNumber(0.2, config.digits)}`;
     }
 
     return formatNumber(parsed, config.digits);
@@ -2642,31 +3245,183 @@
   }
 
   function getResistanceGuideImage(typeName) {
-    return isConicalCollectorType(typeName)
-      ? "/img/conical-collector.svg"
-      : "";
+    if (isArcCollectorWithoutScreenNoEndWallType(typeName)) {
+      return "/img/3-4-1.png";
+    }
+
+    if (isArcCollectorWithoutScreenWithEndWallType(typeName)) {
+      return "/img/3-4-2.png";
+    }
+
+    if (isSuddenExpansionType(typeName)) {
+      return "/img/4-1.png";
+    }
+
+    if (isArcCollectorWithScreenType(typeName)) {
+      return "/img/3-5.png";
+    }
+
+    if (isRostrumWithoutEndWallType(typeName)) {
+      return "/img/3-6.png";
+    }
+
+    if (isRostrumWithEndWallType(typeName)) {
+      return "/img/3-7.png";
+    }
+
+    if (isConicalCollectorType(typeName)) {
+      return "/img/conical-collector.svg";
+    }
+
+    if (isStraightPipeEntranceType(typeName)) {
+      return "/img/3-1.png";
+    }
+
+    if (isFlushWallEntranceType(typeName)) {
+      return "/img/3-2.png";
+    }
+
+    if (isPassingFlowEntranceType(typeName)) {
+      return "/img/3-3.png";
+    }
+
+    return "";
   }
 
   function isConicalCollectorType(typeName) {
     return String(typeName || "").trim().toLowerCase().includes("\u043a\u043e\u043d\u0438\u0447\u0435\u0441");
   }
 
+  function isArcCollectorWithoutScreenType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return normalized.includes("по дуге круга") && normalized.includes("без экрана");
+  }
+
+  function isArcCollectorWithoutScreenNoEndWallType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return isArcCollectorWithoutScreenType(typeName) && normalized.includes("без торцов");
+  }
+
+  function isArcCollectorWithoutScreenWithEndWallType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return isArcCollectorWithoutScreenType(typeName) && !normalized.includes("без торцов") && normalized.includes("с торцов");
+  }
+
+  function isArcCollectorWithScreenType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return normalized.includes("по дуге круга") &&
+      !normalized.includes("без экрана") &&
+      normalized.includes("экран");
+  }
+
+  function isArcCollectorType(typeName) {
+    return isArcCollectorWithoutScreenType(typeName) || isArcCollectorWithScreenType(typeName);
+  }
+
+  function isRostrumCollectorType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return normalized.includes("раструб") && normalized.includes("торцов");
+  }
+
+  function isRostrumWithoutEndWallType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return isRostrumCollectorType(typeName) && normalized.includes("без торцов");
+  }
+
+  function isRostrumWithEndWallType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return isRostrumCollectorType(typeName) && !normalized.includes("без торцов") && normalized.includes("с торцов");
+  }
+
+  function isLengthRatioCollectorType(typeName) {
+    return isConicalCollectorType(typeName) || isRostrumCollectorType(typeName);
+  }
+
+  function isSuddenExpansionType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return normalized.includes("внезапн") && normalized.includes("расширен");
+  }
+
   function isStraightPipeEntranceType(typeName) {
     const normalized = String(typeName || "").trim().toLowerCase();
     return normalized.includes("вход") &&
-      normalized.includes("прям") &&
-      normalized.includes("труб");
+      normalized.includes("труб") &&
+      (normalized.includes("диаграмма 3-1") || normalized.includes("постоянного поперечного сечения"));
+  }
+
+  function isFlushWallEntranceType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return normalized.includes("диаграмма 3-2") ||
+      (normalized.includes("заподлицо") && normalized.includes("стенк"));
+  }
+
+  function isPassingFlowEntranceType(typeName) {
+    const normalized = String(typeName || "").trim().toLowerCase();
+    return normalized.includes("диаграмма 3-3") ||
+      (normalized.includes("проходящ") && normalized.includes("поток"));
   }
 
   function isConicalCollectorSection(section) {
     return Boolean(section && section.kind === "LocalResistance" && isConicalCollectorType(section.localResistanceType));
   }
 
+  function isArcCollectorWithoutScreenSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isArcCollectorWithoutScreenType(section.localResistanceType));
+  }
+
+  function isArcCollectorWithScreenSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isArcCollectorWithScreenType(section.localResistanceType));
+  }
+
+  function isArcCollectorSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isArcCollectorType(section.localResistanceType));
+  }
+
+  function isRostrumCollectorSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isRostrumCollectorType(section.localResistanceType));
+  }
+
+  function isLengthRatioCollectorSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isLengthRatioCollectorType(section.localResistanceType));
+  }
+
+  function isSuddenExpansionSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isSuddenExpansionType(section.localResistanceType));
+  }
+
   function isStraightPipeEntranceSection(section) {
     return Boolean(section && section.kind === "LocalResistance" && isStraightPipeEntranceType(section.localResistanceType));
   }
 
-  function calculateConicalCollectorRatio(section) {
+  function isFlushWallEntranceSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isFlushWallEntranceType(section.localResistanceType));
+  }
+
+  function isPassingFlowEntranceSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && isPassingFlowEntranceType(section.localResistanceType));
+  }
+
+  function isRoundLockedLocalResistanceSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && (
+      isConicalCollectorType(section.localResistanceType) ||
+      isStraightPipeEntranceType(section.localResistanceType) ||
+      isArcCollectorType(section.localResistanceType) ||
+      isRostrumCollectorType(section.localResistanceType) ||
+      isSuddenExpansionType(section.localResistanceType)
+    ));
+  }
+
+  function isEntranceWithoutRouteLengthSection(section) {
+    return Boolean(section && section.kind === "LocalResistance" && (
+      isStraightPipeEntranceType(section.localResistanceType) ||
+      isFlushWallEntranceType(section.localResistanceType) ||
+      isPassingFlowEntranceType(section.localResistanceType) ||
+      isArcCollectorType(section.localResistanceType) ||
+      isSuddenExpansionType(section.localResistanceType)
+    ));
+  }
+
+  function calculateLengthToDiameterRatio(section) {
     const length = parseNumber(getSectionBaseValue(section, "length"), null);
     const diameter = parseNumber(getSectionBaseValue(section, "diameter"), null);
     if (length == null || diameter == null || diameter <= 0) {
@@ -2676,49 +3431,87 @@
     return length / diameter;
   }
 
+  function calculateLocalFlowVelocity(section) {
+    const gasFlow = getBaseFieldValue("GasFlow");
+    const inlet = getEffectiveInletConnection(section);
+    const area = calculateConnectionArea(inlet);
+    if (gasFlow == null || area <= 0) {
+      return null;
+    }
+
+    return gasFlow / area;
+  }
+
+  function calculateSuddenExpansionAreaRatio(section) {
+    const inletDiameter = parseNumber(getSectionBaseValue(section, "diameter"), null);
+    const outletDiameter = parseNumber(getSectionBaseValue(section, "localResistanceParamX"), null);
+    if (inletDiameter == null || outletDiameter == null || inletDiameter <= 0 || outletDiameter <= 0 || outletDiameter <= inletDiameter) {
+      return null;
+    }
+
+    return Math.pow(inletDiameter / outletDiameter, 2);
+  }
+
+  function calculateSuddenExpansionKms(section) {
+    const ratio = calculateSuddenExpansionAreaRatio(section);
+    return ratio == null ? null : Math.pow(1 - ratio, 2);
+  }
+
   function updateDerivedLocalResistanceParams(section) {
-    if (!isConicalCollectorSection(section) && !isStraightPipeEntranceSection(section)) {
+    if (!isLengthRatioCollectorSection(section) && !isEntranceWithoutRouteLengthSection(section)) {
       return;
     }
 
-    section.crossSectionShape = "Round";
-    section.outletCrossSectionShape = "Round";
-    section.diameterB = "";
-    section.outletDiameterB = "";
-    if (!isConicalCollectorSection(section)) {
+    if (isRoundLockedLocalResistanceSection(section)) {
+      section.crossSectionShape = "Round";
+      section.outletCrossSectionShape = "Round";
+      section.diameterB = "";
+      section.outletDiameterB = "";
+    }
+
+    if (!isLengthRatioCollectorSection(section)) {
       section.length = "";
+      if (isArcCollectorWithoutScreenSection(section)) {
+        section.localResistanceParamY = "0";
+      }
       return;
     }
 
-    const ratio = calculateConicalCollectorRatio(section);
+    const ratio = calculateLengthToDiameterRatio(section);
     section.localResistanceParamY = ratio == null ? "" : formatForInput(ratio);
   }
 
   function getLocalResistanceParamYForSubmit(section) {
-    if (!isConicalCollectorSection(section)) {
-      return isStraightPipeEntranceSection(section)
+    if (!isLengthRatioCollectorSection(section)) {
+      if (isArcCollectorWithoutScreenSection(section)) {
+        return "0";
+      }
+
+      return (isStraightPipeEntranceSection(section) || isFlushWallEntranceSection(section) || isArcCollectorWithScreenSection(section))
         ? getSectionBaseValue(section, "localResistanceParamY")
         : section.localResistanceParamY;
     }
 
-    const ratio = calculateConicalCollectorRatio(section);
+    const ratio = calculateLengthToDiameterRatio(section);
     return ratio == null ? "" : formatForInput(ratio);
   }
 
   function getLocalResistanceParamXForSubmit(section) {
-    return isStraightPipeEntranceSection(section)
+    return isStraightPipeEntranceSection(section) || isArcCollectorWithoutScreenSection(section) || isArcCollectorWithScreenSection(section) || isSuddenExpansionSection(section)
       ? getSectionBaseValue(section, "localResistanceParamX")
       : section.localResistanceParamX;
   }
 
   function syncConicalCollectorOutletToNext(section) {
-    if (!isConicalCollectorSection(section) && !isStraightPipeEntranceSection(section)) {
+    if (!isConicalCollectorSection(section) && !isStraightPipeEntranceSection(section) && !isRostrumCollectorSection(section) && !isSuddenExpansionSection(section)) {
       return;
     }
 
     const index = state.sections.findIndex((item) => item.id === section.id);
     const next = index >= 0 ? state.sections[index + 1] : null;
-    const diameter = parseNumber(getSectionBaseValue(section, "diameter"), null);
+    const diameter = isSuddenExpansionSection(section)
+      ? parseNumber(getSectionBaseValue(section, "localResistanceParamX"), null)
+      : parseNumber(getSectionBaseValue(section, "diameter"), null);
     if (!next || diameter == null || diameter <= 0) {
       return;
     }
@@ -2752,19 +3545,30 @@
   }
 
   function getResistanceParameterContext(section, item) {
-    const inputParamX = isStraightPipeEntranceSection(section)
+    const needsBaseParamX = isStraightPipeEntranceSection(section) ||
+      isArcCollectorWithoutScreenSection(section) ||
+      isArcCollectorWithScreenSection(section);
+    const inputParamX = needsBaseParamX
       ? parseNumber(getSectionBaseValue(section, "localResistanceParamX"), null)
       : parseNumber(section && section.localResistanceParamX, null);
-    const inputParamY = isStraightPipeEntranceSection(section)
+    const needsBaseParamY = isStraightPipeEntranceSection(section) ||
+      isFlushWallEntranceSection(section) ||
+      isArcCollectorWithScreenSection(section);
+    const inputParamY = needsBaseParamY
       ? parseNumber(getSectionBaseValue(section, "localResistanceParamY"), null)
       : parseNumber(section && section.localResistanceParamY, null);
     const diameter = parseNumber(section ? getSectionBaseValue(section, "diameter") : null, null);
+    const flowVelocity = calculateLocalFlowVelocity(section);
     let rawParamX = inputParamX;
     let paramX = rawParamX;
-    const isConical = isConicalCollectorSection(section);
+    const isLengthRatio = isLengthRatioCollectorSection(section);
     const isPipeEntrance = isStraightPipeEntranceSection(section);
-    let rawParamY = isConical
-      ? calculateConicalCollectorRatio(section)
+    const isFlushWallEntrance = isFlushWallEntranceSection(section);
+    const isPassingFlowEntrance = isPassingFlowEntranceSection(section);
+    const isArcWithoutScreen = isArcCollectorWithoutScreenSection(section);
+    const isArcWithScreen = isArcCollectorWithScreenSection(section);
+    let rawParamY = isLengthRatio
+      ? calculateLengthToDiameterRatio(section)
       : inputParamY;
     let paramY = rawParamY;
     let xClamped = false;
@@ -2781,6 +3585,39 @@
       paramY = rawParamY;
     }
 
+    if (isFlushWallEntrance) {
+      rawParamY = inputParamY != null && diameter != null && diameter > 0
+        ? inputParamY / diameter
+        : null;
+      paramY = rawParamY;
+    }
+
+    if (isPassingFlowEntrance) {
+      rawParamX = inputParamX != null && flowVelocity != null && flowVelocity > 0
+        ? inputParamX / flowVelocity
+        : null;
+      paramX = rawParamX;
+    }
+
+    if (isArcWithoutScreen || isArcWithScreen) {
+      rawParamX = inputParamX != null && diameter != null && diameter > 0
+        ? inputParamX / diameter
+        : null;
+      paramX = rawParamX;
+    }
+
+    if (isArcWithoutScreen) {
+      rawParamY = 0;
+      paramY = 0;
+    }
+
+    if (isArcWithScreen) {
+      rawParamY = inputParamY != null && diameter != null && diameter > 0
+        ? inputParamY / diameter
+        : null;
+      paramY = rawParamY;
+    }
+
     if (isPipeEntrance && item && rawParamX != null) {
       const xs = uniqueSorted(getResistancePoints(item).map((point) => readPointNumber(point, "paramX", "ParamX")));
       const maxX = xs.length ? xs[xs.length - 1] : null;
@@ -2790,7 +3627,16 @@
       }
     }
 
-    if ((isConical || isPipeEntrance) && item && rawParamY != null) {
+    if (isArcWithoutScreen && item && rawParamX != null) {
+      const xs = uniqueSorted(getResistancePoints(item).map((point) => readPointNumber(point, "paramX", "ParamX")));
+      const maxX = xs.length ? xs[xs.length - 1] : null;
+      if (maxX != null && rawParamX > maxX + 0.000001) {
+        paramX = maxX;
+        xClamped = true;
+      }
+    }
+
+    if ((isLengthRatio && isConicalCollectorSection(section) || isPipeEntrance) && item && rawParamY != null) {
       const ys = uniqueSorted(getResistancePoints(item).map((point) => readPointNumber(point, "paramY", "ParamY")));
       const maxY = ys.length ? ys[ys.length - 1] : null;
       if (maxY != null && rawParamY > maxY + 0.000001) {
@@ -2807,6 +3653,7 @@
       inputParamX,
       inputParamY,
       diameter,
+      flowVelocity,
       xClamped,
       yClamped
     };
@@ -2815,6 +3662,10 @@
   function getLocalResistanceValue(sectionOrTypeName) {
     const section = typeof sectionOrTypeName === "object" ? sectionOrTypeName : null;
     const typeName = section ? section.localResistanceType : sectionOrTypeName;
+    if (isSuddenExpansionType(typeName)) {
+      return section ? calculateSuddenExpansionKms(section) : null;
+    }
+
     const item = getLocalResistanceItem(typeName);
     if (!item) {
       return null;
@@ -2970,7 +3821,7 @@
 
   function buildRoughnessSummaryHtml(selection) {
     const sourceText = selection.useCustom
-      ? (selection.isSection ? "Собственная шероховатость блока" : "Собственная шероховатость трассы")
+      ? (selection.isSection ? "Собственная Δ блока" : "Собственная Δ трассы")
       : `${selection.material || "материал не выбран"} / ${selection.condition || "состояние не выбрано"}`;
     const valueText = selection.effectiveValue == null
       ? "—"
@@ -2980,7 +3831,7 @@
       '<div class="roughness-reference-card">',
       '<div class="roughness-reference-content">',
       `<span class="roughness-reference-title">${escapeHtml(sourceText)}</span>`,
-      `<span class="roughness-reference-value">K<sub>э</sub> = <strong>${escapeHtml(valueText)}</strong></span>`,
+      `<span class="roughness-reference-value">Δ = <strong>${escapeHtml(valueText)}</strong></span>`,
       selection.useCustom && selection.tableValue != null
         ? `<small>Справочно для выбранного материала: ${escapeHtml(formatRoughnessMm(selection.tableValue))} мм</small>`
         : "",
@@ -3029,7 +3880,7 @@
     const title = modal.querySelector('[data-role="roughness-guide-title"]');
     const body = modal.querySelector('[data-role="roughness-guide-body"]');
     if (title) {
-      title.textContent = "Таблица эквивалентной шероховатости";
+      title.textContent = "Таблица Δ";
     }
     if (body) {
       body.innerHTML = buildRoughnessGuideHtml(selection);
@@ -3060,7 +3911,7 @@
       '<div class="modal-dialog modal-dialog-centered modal-lg">',
       '<div class="modal-content">',
       '<div class="modal-header">',
-      '<h3 class="modal-title" data-role="roughness-guide-title">Таблица эквивалентной шероховатости</h3>',
+      '<h3 class="modal-title" data-role="roughness-guide-title">Таблица Δ</h3>',
       '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>',
       "</div>",
       '<div class="modal-body" data-role="roughness-guide-body"></div>',
@@ -3082,7 +3933,7 @@
     return [
       '<div class="resistance-guide-summary material-guide-summary">',
       `<span class="resistance-guide-param"><span>Источник:</span><strong>${escapeHtml(sourceText)}</strong></span>`,
-      `<span class="resistance-guide-param"><span>K<sub>э</sub> =</span><strong>${escapeHtml(valueText)}</strong></span>`,
+      `<span class="resistance-guide-param"><span>Δ =</span><strong>${escapeHtml(valueText)}</strong></span>`,
       "</div>",
       buildRoughnessGuideTableHtml(selection)
     ].join("");
@@ -3110,7 +3961,7 @@
       '<div class="resistance-table-wrap material-table-wrap">',
       '<table class="material-guide-table">',
       "<thead>",
-      "<tr><th>Материал стенки</th><th>Состояние поверхности</th><th>K<sub>э</sub>, мм</th></tr>",
+      "<tr><th>Материал стенки</th><th>Состояние поверхности</th><th>Δ, мм</th></tr>",
       "</thead>",
       `<tbody>${rows}</tbody>`,
       "</table>",
@@ -3119,7 +3970,7 @@
   }
 
   function formatRoughnessMm(value) {
-    const parsed = Number(value);
+    const parsed = parseNumber(value, null);
     if (!Number.isFinite(parsed)) {
       return "—";
     }
@@ -3145,11 +3996,12 @@
     );
   }
 
-  function renderRawField(label, controlHtml, hint, fullWidth) {
+  function renderRawField(label, controlHtml, hint, fullWidth, note) {
     return [
       `<div class="field${fullWidth ? " field-span-2" : ""}">`,
       `<label class="field-label"><span>${escapeHtml(label)}</span>${renderContextTooltipTrigger(label, hint)}</label>`,
       controlHtml,
+      note ? `<small class="field-hint">${escapeHtml(note)}</small>` : "",
       "</div>"
     ].join("");
   }
@@ -3750,8 +4602,8 @@
   }
 
   function getEffectiveOutletConnection(section) {
-    const isConical = isConicalCollectorSection(section);
-    const inletShape = isConical ? "Round" : normalizeShape(section.crossSectionShape);
+    const isRoundLocked = isRoundLockedLocalResistanceSection(section);
+    const inletShape = isRoundLocked ? "Round" : normalizeShape(section.crossSectionShape);
     const shape = section.kind === "Contraction" || section.kind === "Expansion"
       ? normalizeShape(section.outletCrossSectionShape || inletShape)
       : inletShape;
@@ -3770,7 +4622,7 @@
   }
 
   function getEffectiveInletConnection(section) {
-    const shape = isConicalCollectorSection(section) ? "Round" : normalizeShape(section.crossSectionShape);
+    const shape = isRoundLockedLocalResistanceSection(section) ? "Round" : normalizeShape(section.crossSectionShape);
     return {
       shape,
       sizeA: parseNumber(getSectionBaseValue(section, "diameter"), null),
@@ -3869,6 +4721,19 @@
     return String(value).replace(",", ".").trim();
   }
 
+  function sanitizeTextValue(value) {
+    if (value == null) {
+      return "";
+    }
+    return String(value).trim();
+  }
+
+  function normalizeSectionFieldValue(field, value) {
+    return numericSectionFields.has(field)
+      ? sanitizeValue(value)
+      : sanitizeTextValue(value);
+  }
+
   function parseNumber(value, fallback) {
     if (value === "" || value == null) {
       return fallback;
@@ -3886,7 +4751,7 @@
   }
 
   function formatCompactNumber(value, maxDigits) {
-    const parsed = Number(value);
+    const parsed = parseNumber(value, null);
     if (!Number.isFinite(parsed)) {
       return "—";
     }
@@ -3926,6 +4791,10 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
+  }
+
+  function stripHtml(value) {
+    return String(value || "").replace(/<[^>]*>/g, "");
   }
 
   function escapeAttr(value) {

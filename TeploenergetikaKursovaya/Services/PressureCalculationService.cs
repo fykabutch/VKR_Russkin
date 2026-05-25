@@ -187,6 +187,8 @@ public class PressureCalculationService : IPressureCalculationService
                 }
 
                 var reynolds = (flowVelocity * hydraulicDiameter) / viscosityResolution.Value;
+                AddLocalResistanceReynoldsNotice(section, kind, reynolds, title, notices);
+
                 var lambda = CalculateLambda(reynolds, hydraulicDiameter, roughnessResolution.Value);
                 var dynamicPressure = gasDensity * Math.Pow(flowVelocity, 2) / 2.0;
                 var frictionLoss = length > 0
@@ -199,7 +201,8 @@ public class PressureCalculationService : IPressureCalculationService
                     inletGeometry.Area,
                     outletGeometry.Area,
                     shape != outletShape,
-                    localResistanceCatalog);
+                    localResistanceCatalog,
+                    flowVelocity);
                 if (!zetaResolution.Success)
                 {
                     return Fail($"{title}: {zetaResolution.ErrorMessage}");
@@ -526,7 +529,8 @@ public class PressureCalculationService : IPressureCalculationService
         double inletArea,
         double outletArea,
         bool isShapeTransition,
-        IReadOnlyDictionary<string, LRC> localResistanceCatalog)
+        IReadOnlyDictionary<string, LRC> localResistanceCatalog,
+        double flowVelocity)
     {
         if (kind == SectionKinds.Straight)
         {
@@ -543,7 +547,7 @@ public class PressureCalculationService : IPressureCalculationService
             SectionKinds.Bend => ResolveBendCoefficient(section.TurnAngle),
             SectionKinds.Contraction => ResolveContractionCoefficient(inletArea, outletArea, isShapeTransition),
             SectionKinds.Expansion => ResolveExpansionCoefficient(inletArea, outletArea, isShapeTransition),
-            SectionKinds.LocalResistance => ResolveCatalogCoefficient(section, localResistanceCatalog),
+            SectionKinds.LocalResistance => ResolveCatalogCoefficient(section, localResistanceCatalog, flowVelocity),
             _ => ResolutionResult.Ok(0)
         };
     }
@@ -597,7 +601,8 @@ public class PressureCalculationService : IPressureCalculationService
 
     private static ResolutionResult ResolveCatalogCoefficient(
         SectionInput section,
-        IReadOnlyDictionary<string, LRC> localResistanceCatalog)
+        IReadOnlyDictionary<string, LRC> localResistanceCatalog,
+        double flowVelocity)
     {
         var localResistanceType = section.LocalResistanceType;
         if (string.IsNullOrWhiteSpace(localResistanceType))
@@ -607,7 +612,19 @@ public class PressureCalculationService : IPressureCalculationService
 
         if (!localResistanceCatalog.TryGetValue(localResistanceType, out var resistance))
         {
-            return ResolutionResult.Fail($"не найден коэффициент для типа \"{localResistanceType}\"");
+            var normalizedType = NormalizeLocalResistanceCatalogName(localResistanceType);
+            if (string.Equals(normalizedType, localResistanceType, StringComparison.Ordinal) ||
+                !localResistanceCatalog.TryGetValue(normalizedType, out resistance))
+            {
+                return ResolutionResult.Fail($"не найден коэффициент для типа \"{localResistanceType}\"");
+            }
+
+            localResistanceType = normalizedType;
+        }
+
+        if (SectionInput.IsSuddenExpansion(localResistanceType))
+        {
+            return ResolveSuddenExpansionCoefficient(section, localResistanceType);
         }
 
         if (!resistance.IsTabular)
@@ -619,14 +636,22 @@ public class PressureCalculationService : IPressureCalculationService
 
         var isConicalCollector = SectionInput.IsConicalCollector(localResistanceType);
         var isStraightPipeEntrance = SectionInput.IsStraightPipeEntrance(localResistanceType);
+        var isFlushWallEntrance = SectionInput.IsFlushWallEntrance(localResistanceType);
+        var isPassingFlowEntrance = SectionInput.IsPassingFlowEntrance(localResistanceType);
+        var isArcCollectorWithoutScreen = SectionInput.IsArcCollectorWithoutScreen(localResistanceType);
+        var isArcCollectorWithScreen = SectionInput.IsArcCollectorWithScreen(localResistanceType);
+        var isRostrumCollector = SectionInput.IsRostrumCollector(localResistanceType);
+        var isLengthRatioCollector = SectionInput.IsLengthRatioCollector(localResistanceType);
         var paramX = section.LocalResistanceParamX;
         var paramY = section.LocalResistanceParamY;
-        if (isConicalCollector)
+        if (isLengthRatioCollector)
         {
             if (!section.Length.HasValue || section.Length.Value <= 0 ||
                 !section.Diameter.HasValue || section.Diameter.Value <= 0)
             {
-                return ResolutionResult.Fail($"для конического коллектора \"{localResistanceType}\" укажите выходной диаметр d0 и длину раструба");
+                return ResolutionResult.Fail(isConicalCollector
+                    ? $"для конического коллектора \"{localResistanceType}\" укажите выходной диаметр d0 и длину раструба"
+                    : $"для сопротивления \"{localResistanceType}\" укажите диаметр Dг и длину раструба l");
             }
 
             paramY = section.Length.Value / section.Diameter.Value;
@@ -653,13 +678,134 @@ public class PressureCalculationService : IPressureCalculationService
             paramY = section.LocalResistanceParamY.Value / section.Diameter.Value;
         }
 
+        if (isArcCollectorWithoutScreen)
+        {
+            if (!section.Diameter.HasValue || section.Diameter.Value <= 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите диаметр Dг");
+            }
+
+            if (!section.LocalResistanceParamX.HasValue || section.LocalResistanceParamX.Value < 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите неотрицательный радиус закругления r");
+            }
+
+            paramX = section.LocalResistanceParamX.Value / section.Diameter.Value;
+            paramY = 0;
+        }
+
+        if (isArcCollectorWithScreen)
+        {
+            if (!section.Diameter.HasValue || section.Diameter.Value <= 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите диаметр Dг");
+            }
+
+            if (!section.LocalResistanceParamX.HasValue || !section.LocalResistanceParamY.HasValue)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите расстояние h и радиус r");
+            }
+
+            if (section.LocalResistanceParamX.Value < 0 || section.LocalResistanceParamY.Value < 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" расстояние h и радиус r не могут быть отрицательными");
+            }
+
+            paramX = section.LocalResistanceParamX.Value / section.Diameter.Value;
+            paramY = section.LocalResistanceParamY.Value / section.Diameter.Value;
+        }
+
+        if (isFlushWallEntrance)
+        {
+            if (!section.Diameter.HasValue || section.Diameter.Value <= 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите характерный размер входного отверстия a");
+            }
+
+            if (!section.LocalResistanceParamY.HasValue || section.LocalResistanceParamY.Value < 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите длину входного участка l");
+            }
+
+            paramY = section.LocalResistanceParamY.Value / section.Diameter.Value;
+        }
+
+        if (isPassingFlowEntrance)
+        {
+            if (flowVelocity <= 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" невозможно рассчитать скорость w0: проверьте расход газа и площадь входного сечения");
+            }
+
+            if (!section.LocalResistanceParamX.HasValue || section.LocalResistanceParamX.Value < 0)
+            {
+                return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите неотрицательную скорость проходящего внешнего потока w∞");
+            }
+
+            paramX = section.LocalResistanceParamX.Value / flowVelocity;
+        }
+
         if (!paramX.HasValue || !paramY.HasValue)
         {
-            return ResolutionResult.Fail(isConicalCollector
-                ? $"для конического коллектора \"{localResistanceType}\" укажите угол α, выходной диаметр d0 и длину раструба"
+            return ResolutionResult.Fail(isLengthRatioCollector
+                ? isConicalCollector
+                    ? $"для конического коллектора \"{localResistanceType}\" укажите угол α, выходной диаметр d0 и длину раструба"
+                    : $"для сопротивления \"{localResistanceType}\" укажите угол α, диаметр Dг и длину раструба l"
                 : isStraightPipeEntrance
                     ? $"для сопротивления \"{localResistanceType}\" укажите диаметр Dг, размер b и размер δ1"
+                    : isArcCollectorWithoutScreen
+                        ? $"для сопротивления \"{localResistanceType}\" укажите диаметр Dг и радиус r"
+                    : isArcCollectorWithScreen
+                        ? $"для сопротивления \"{localResistanceType}\" укажите диаметр Dг, расстояние h и радиус r"
+                    : isFlushWallEntrance
+                        ? $"для сопротивления \"{localResistanceType}\" укажите угол δ, длину l и характерный размер a"
+                        : isPassingFlowEntrance
+                            ? $"для сопротивления \"{localResistanceType}\" укажите скорость w∞ и угол δ"
                     : $"для табличного сопротивления \"{localResistanceType}\" укажите угол α и отношение l/d0");
+        }
+
+        var paramXLabel = "α";
+        var paramYLabel = "l/d0";
+        var paramXDigits = 0;
+        var paramYDigits = 3;
+        if (isStraightPipeEntrance)
+        {
+            paramXLabel = "b/Dг";
+            paramYLabel = "δ1/Dг";
+            paramXDigits = 3;
+        }
+        else if (isFlushWallEntrance)
+        {
+            paramXLabel = "δ";
+            paramYLabel = "l/a";
+            paramXDigits = 0;
+        }
+        else if (isPassingFlowEntrance)
+        {
+            paramXLabel = "w∞/w0";
+            paramYLabel = "δ";
+            paramXDigits = 3;
+            paramYDigits = 0;
+        }
+        else if (isArcCollectorWithoutScreen)
+        {
+            paramXLabel = "r/Dг";
+            paramYLabel = "служебный параметр";
+            paramXDigits = 3;
+            paramYDigits = 0;
+        }
+        else if (isArcCollectorWithScreen)
+        {
+            paramXLabel = "h/Dг";
+            paramYLabel = "r/Dг";
+            paramXDigits = 3;
+        }
+        else if (isRostrumCollector)
+        {
+            paramXLabel = "α";
+            paramYLabel = "l/Dг";
+            paramXDigits = 0;
+            paramYDigits = 3;
         }
 
         return ResolveTabularCoefficient(
@@ -667,12 +813,118 @@ public class PressureCalculationService : IPressureCalculationService
             resistance.DataPoints,
             paramX.Value,
             paramY.Value,
-            clampHighX: isStraightPipeEntrance,
+            clampHighX: isStraightPipeEntrance || isArcCollectorWithoutScreen,
             clampHighY: isConicalCollector || isStraightPipeEntrance,
-            paramXLabel: isStraightPipeEntrance ? "b/Dг" : "α",
-            paramYLabel: isStraightPipeEntrance ? "δ1/Dг" : "l/d0",
-            paramXDigits: isStraightPipeEntrance ? 3 : 0,
-            paramYDigits: 3);
+            paramXLabel: paramXLabel,
+            paramYLabel: paramYLabel,
+            paramXDigits: paramXDigits,
+            paramYDigits: paramYDigits);
+    }
+
+    private static ResolutionResult ResolveSuddenExpansionCoefficient(SectionInput section, string localResistanceType)
+    {
+        if (!section.Diameter.HasValue || section.Diameter.Value <= 0)
+        {
+            return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите входной диаметр D0");
+        }
+
+        if (!section.LocalResistanceParamX.HasValue || section.LocalResistanceParamX.Value <= 0)
+        {
+            return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" укажите выходной диаметр D2");
+        }
+
+        var inletDiameter = section.Diameter.Value;
+        var outletDiameter = section.LocalResistanceParamX.Value;
+        if (outletDiameter <= inletDiameter)
+        {
+            return ResolutionResult.Fail($"для сопротивления \"{localResistanceType}\" выходной диаметр D2 должен быть больше входного D0");
+        }
+
+        var inletArea = Math.PI * Math.Pow(inletDiameter, 2) / 4.0;
+        var outletArea = Math.PI * Math.Pow(outletDiameter, 2) / 4.0;
+        var areaRatio = inletArea / outletArea;
+        var zeta = Math.Pow(1 - areaRatio, 2);
+        return ResolutionResult.Ok(zeta);
+    }
+
+    private static void AddLocalResistanceReynoldsNotice(
+        SectionInput section,
+        string kind,
+        double reynolds,
+        string title,
+        ICollection<string> notices)
+    {
+        if (kind != SectionKinds.LocalResistance || section.UseCustomLRC)
+        {
+            return;
+        }
+
+        if (SectionInput.IsStraightPipeEntrance(section.LocalResistanceType) && reynolds <= 10000)
+        {
+            notices.Add($"{title}: диаграмма 3-1 для входа в прямую трубу применима при Re > 10^4; сейчас Re = {reynolds:F0}. КМС рассчитан по справочной таблице, но результат следует считать ориентировочным.");
+            return;
+        }
+
+        if (SectionInput.IsSuddenExpansion(section.LocalResistanceType) && reynolds <= 10000)
+        {
+            notices.Add($"{title}: внезапное расширение по 4-1 применяется при Re > 10^4 и равномерном профиле скорости перед расширением; сейчас Re = {reynolds:F0}. Результат следует считать ориентировочным.");
+            return;
+        }
+
+        var diagramNumber = GetLocalResistanceDiagramNumber(section.LocalResistanceType);
+        if (diagramNumber is >= 2 and <= 7 && reynolds < 10000)
+        {
+            notices.Add($"{title}: диаграмма 3-{diagramNumber} применима при Re ≥ 10^4; сейчас Re = {reynolds:F0}. КМС рассчитан по справочной таблице, но результат следует считать ориентировочным.");
+        }
+    }
+
+    private static int? GetLocalResistanceDiagramNumber(string? localResistanceType)
+    {
+        if (SectionInput.IsFlushWallEntrance(localResistanceType))
+        {
+            return 2;
+        }
+
+        if (SectionInput.IsPassingFlowEntrance(localResistanceType))
+        {
+            return 3;
+        }
+
+        if (SectionInput.IsArcCollectorWithoutScreen(localResistanceType))
+        {
+            return 4;
+        }
+
+        if (SectionInput.IsArcCollectorWithScreen(localResistanceType))
+        {
+            return 5;
+        }
+
+        if (SectionInput.IsRostrumCollector(localResistanceType) &&
+            localResistanceType?.Contains("без торцов", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return 6;
+        }
+
+        if (SectionInput.IsRostrumCollector(localResistanceType) &&
+            localResistanceType?.Contains("с торцов", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return 7;
+        }
+
+        return null;
+    }
+
+    private static string NormalizeLocalResistanceCatalogName(string localResistanceType)
+    {
+        var normalized = localResistanceType.Trim();
+        for (var diagram = 1; diagram <= 7; diagram++)
+        {
+            normalized = normalized.Replace($" (диаграмма 3-{diagram})", string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        normalized = normalized.Replace(" (диаграмма 4-1)", string.Empty, StringComparison.OrdinalIgnoreCase);
+        return normalized.Trim();
     }
 
     private static ResolutionResult ResolveTabularCoefficient(

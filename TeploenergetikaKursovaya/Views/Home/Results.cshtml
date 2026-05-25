@@ -222,7 +222,7 @@
     }
 
     string FormatBlockRoughness(CalcResultsViewModel result) =>
-        $"Kэ = {FormatSmartNumber(result.Roughness)} мм";
+        $"Δ = {FormatSmartNumber(result.Roughness)} мм";
 
     string DescribeRoughnessSource(SectionInput? section)
     {
@@ -285,7 +285,7 @@
         values.Add(new("Форма", shapeLabel));
 
         if (section.Length.HasValue &&
-            !(kind == SectionKinds.LocalResistance && SectionInput.IsStraightPipeEntrance(section.LocalResistanceType)))
+            !(kind == SectionKinds.LocalResistance && SectionInput.SkipsRouteLength(section.LocalResistanceType)))
         {
             values.Add(new("Длина", FormatSectionDimension(section.Length, section.LengthUnit)));
         }
@@ -326,8 +326,70 @@
             }
             else
             {
-                values.Add(new("α", $"{section.LocalResistanceParamX.Value:F0}°"));
-                values.Add(new("l/d₀", section.LocalResistanceParamY.Value.ToString("F3")));
+                if (SectionInput.IsFlushWallEntrance(section.LocalResistanceType))
+                {
+                    values.Add(new("δ", $"{section.LocalResistanceParamX.Value:F0}°"));
+                    values.Add(new("a", FormatSectionDimension(section.Diameter, section.DiameterUnit)));
+                    values.Add(new("l", FormatSectionDimension(section.LocalResistanceParamY, "m")));
+                    if (section.Diameter.HasValue && section.Diameter.Value > 0)
+                    {
+                        values.Add(new("l/a", (section.LocalResistanceParamY.Value / section.Diameter.Value).ToString("F3")));
+                    }
+                }
+                else if (SectionInput.IsPassingFlowEntrance(section.LocalResistanceType))
+                {
+                    var ratio = result.FlowVelocity > 0
+                        ? section.LocalResistanceParamX.Value / result.FlowVelocity
+                        : (double?)null;
+                    values.Add(new("w∞", $"{section.LocalResistanceParamX.Value:F3} м/с"));
+                    values.Add(new("w₀", $"{result.FlowVelocity:F3} м/с"));
+                    if (ratio.HasValue)
+                    {
+                        values.Add(new("w∞/w₀", ratio.Value.ToString("F3")));
+                    }
+
+                    values.Add(new("δ", $"{section.LocalResistanceParamY.Value:F0}°"));
+                }
+                else if (SectionInput.IsArcCollectorWithoutScreen(section.LocalResistanceType))
+                {
+                    values.Add(new("r", FormatSectionDimension(section.LocalResistanceParamX, "m")));
+                    if (section.Diameter.HasValue && section.Diameter.Value > 0)
+                    {
+                        values.Add(new("r/Dг", (section.LocalResistanceParamX.Value / section.Diameter.Value).ToString("F3")));
+                    }
+                }
+                else if (SectionInput.IsArcCollectorWithScreen(section.LocalResistanceType))
+                {
+                    values.Add(new("h", FormatSectionDimension(section.LocalResistanceParamX, "m")));
+                    values.Add(new("r", FormatSectionDimension(section.LocalResistanceParamY, "m")));
+                    if (section.Diameter.HasValue && section.Diameter.Value > 0)
+                    {
+                        values.Add(new("h/Dг", (section.LocalResistanceParamX.Value / section.Diameter.Value).ToString("F3")));
+                        values.Add(new("r/Dг", (section.LocalResistanceParamY.Value / section.Diameter.Value).ToString("F3")));
+                    }
+                }
+                else if (SectionInput.IsRostrumCollector(section.LocalResistanceType))
+                {
+                    values.Add(new("α", $"{section.LocalResistanceParamX.Value:F0}°"));
+                    if (section.Length.HasValue && section.Diameter.HasValue && section.Diameter.Value > 0)
+                    {
+                        values.Add(new("l", FormatSectionDimension(section.Length, section.LengthUnit)));
+                        values.Add(new("l/Dг", (section.Length.Value / section.Diameter.Value).ToString("F3")));
+                    }
+                }
+                else if (SectionInput.IsSuddenExpansion(section.LocalResistanceType))
+                {
+                    values.Add(new("D₂", FormatSectionDimension(section.LocalResistanceParamX, "m")));
+                    if (section.Diameter.HasValue && section.Diameter.Value > 0 && section.LocalResistanceParamX.Value > section.Diameter.Value)
+                    {
+                        values.Add(new("F₀/F₂", Math.Pow(section.Diameter.Value / section.LocalResistanceParamX.Value, 2).ToString("F3")));
+                    }
+                }
+                else
+                {
+                    values.Add(new("α", $"{section.LocalResistanceParamX.Value:F0}°"));
+                    values.Add(new("l/d₀", section.LocalResistanceParamY.Value.ToString("F3")));
+                }
             }
         }
 
@@ -392,7 +454,62 @@
                     }
                     else
                     {
-                        parts.Add($"α {section.LocalResistanceParamX.Value:F0}; l/d₀ {section.LocalResistanceParamY.Value:F3}");
+                        if (SectionInput.IsFlushWallEntrance(section.LocalResistanceType))
+                        {
+                            var ratioLa = section.Diameter.HasValue && section.Diameter.Value > 0
+                                ? section.LocalResistanceParamY.Value / section.Diameter.Value
+                                : (double?)null;
+                            parts.Add(ratioLa.HasValue
+                                ? $"δ {section.LocalResistanceParamX.Value:F0}°; l {FormatSectionDimension(section.LocalResistanceParamY, "m")}; a {FormatSectionDimension(section.Diameter, section.DiameterUnit)}; l/a {ratioLa.Value:F3}"
+                                : $"δ {section.LocalResistanceParamX.Value:F0}°; l {FormatSectionDimension(section.LocalResistanceParamY, "m")}");
+                        }
+                        else if (SectionInput.IsPassingFlowEntrance(section.LocalResistanceType))
+                        {
+                            parts.Add($"w∞ {section.LocalResistanceParamX.Value:F3} м/с; δ {section.LocalResistanceParamY.Value:F0}°");
+                        }
+                        else if (SectionInput.IsArcCollectorWithoutScreen(section.LocalResistanceType))
+                        {
+                            var ratioR = section.Diameter.HasValue && section.Diameter.Value > 0
+                                ? section.LocalResistanceParamX.Value / section.Diameter.Value
+                                : (double?)null;
+                            parts.Add(ratioR.HasValue
+                                ? $"r {FormatSectionDimension(section.LocalResistanceParamX, "m")}; r/Dг {ratioR.Value:F3}"
+                                : $"r {FormatSectionDimension(section.LocalResistanceParamX, "m")}");
+                        }
+                        else if (SectionInput.IsArcCollectorWithScreen(section.LocalResistanceType))
+                        {
+                            var ratioH = section.Diameter.HasValue && section.Diameter.Value > 0
+                                ? section.LocalResistanceParamX.Value / section.Diameter.Value
+                                : (double?)null;
+                            var ratioR = section.Diameter.HasValue && section.Diameter.Value > 0
+                                ? section.LocalResistanceParamY.Value / section.Diameter.Value
+                                : (double?)null;
+                            parts.Add(ratioH.HasValue && ratioR.HasValue
+                                ? $"h {FormatSectionDimension(section.LocalResistanceParamX, "m")}; r {FormatSectionDimension(section.LocalResistanceParamY, "m")}; h/Dг {ratioH.Value:F3}; r/Dг {ratioR.Value:F3}"
+                                : $"h {FormatSectionDimension(section.LocalResistanceParamX, "m")}; r {FormatSectionDimension(section.LocalResistanceParamY, "m")}");
+                        }
+                        else if (SectionInput.IsRostrumCollector(section.LocalResistanceType))
+                        {
+                            var ratioLa = section.Length.HasValue && section.Diameter.HasValue && section.Diameter.Value > 0
+                                ? section.Length.Value / section.Diameter.Value
+                                : (double?)null;
+                            parts.Add(ratioLa.HasValue
+                                ? $"α {section.LocalResistanceParamX.Value:F0}°; l/Dг {ratioLa.Value:F3}"
+                                : $"α {section.LocalResistanceParamX.Value:F0}°");
+                        }
+                        else if (SectionInput.IsSuddenExpansion(section.LocalResistanceType))
+                        {
+                            var areaRatio = section.Diameter.HasValue && section.Diameter.Value > 0 && section.LocalResistanceParamX.Value > section.Diameter.Value
+                                ? Math.Pow(section.Diameter.Value / section.LocalResistanceParamX.Value, 2)
+                                : (double?)null;
+                            parts.Add(areaRatio.HasValue
+                                ? $"D₂ {FormatSectionDimension(section.LocalResistanceParamX, "m")}; F₀/F₂ {areaRatio.Value:F3}"
+                                : $"D₂ {FormatSectionDimension(section.LocalResistanceParamX, "m")}");
+                        }
+                        else
+                        {
+                            parts.Add($"α {section.LocalResistanceParamX.Value:F0}; l/d₀ {section.LocalResistanceParamY.Value:F3}");
+                        }
                     }
                 }
             }
@@ -738,7 +855,7 @@
                         <th class="column-element">Элемент</th>
                         <th class="column-type">Тип</th>
                         <th>Введенные параметры</th>
-                        <th>Материал / шероховатость</th>
+                        <th>Материал / Δ</th>
                         <th>Расчетные значения</th>
                         <th>Потери, Па</th>
                     </tr>
