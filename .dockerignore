@@ -7,6 +7,9 @@ artifacts/
 **/*.db-shm
 **/*.db-wal
 **/*.pre_3nf_backup_*.db
+.env
+.env.*
+!.env.example
 Dockerfile
 docker-compose.yml
 Jenkinsfile

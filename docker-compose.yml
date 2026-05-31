@@ -1,21 +1,33 @@
 services:
   app:
+    image: vkr-russkin:${APP_IMAGE_TAG:-latest}
     container_name: vkr_russkin
     hostname: vkr_russkin
     build:
       context: .
       dockerfile: Dockerfile
+      target: final
+      args:
+        BUILD_CONFIGURATION: ${BUILD_CONFIGURATION:-Release}
     ports:
-      - "0.0.0.0:5454:5454"
+      - "0.0.0.0:${APP_PORT:-5454}:5454"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:5454
       DatabaseProvider: MariaDb
-      ConnectionStrings__DefaultConnection: "Server=db;Port=3306;Database=vkr_russkin;User=vkr_russkin;Password=vkr_russkin_password;CharSet=utf8mb4;"
-      DatabaseSeed__SqlitePath: "/app/seed/TeploenergetikaKursovaya.db"
+      ConnectionStrings__DefaultConnection: "Server=db;Port=3306;Database=${MARIADB_DATABASE:-vkr_russkin};User=${MARIADB_USER:-vkr_russkin};Password=${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env or Jenkins credentials};CharSet=utf8mb4;"
+      DatabaseSeed__SqlitePath: "/app/seed/VKR_Russkin.db"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5454/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend
     restart: unless-stopped
 
   db:
@@ -24,13 +36,12 @@ services:
     hostname: vkr_russkin_mariadb
     command: --bind-address=0.0.0.0
     environment:
-      MARIADB_DATABASE: vkr_russkin
-      MARIADB_USER: vkr_russkin
-      MARIADB_PASSWORD: vkr_russkin_password
-      MARIADB_ROOT_PASSWORD: password
-      MARIADB_ROOT_HOST: "%"
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-vkr_russkin}
+      MARIADB_USER: ${MARIADB_USER:-vkr_russkin}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env or Jenkins credentials}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD in .env or Jenkins credentials}
     ports:
-      - "0.0.0.0:5456:3306"
+      - "127.0.0.1:${MARIADB_PORT:-5456}:3306"
     volumes:
       - vkr-russkin-mariadb-data:/var/lib/mysql
     healthcheck:
@@ -38,7 +49,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 20s
+    networks:
+      - backend
     restart: unless-stopped
 
 volumes:
   vkr-russkin-mariadb-data:
+
+networks:
+  backend:
+    driver: bridge
