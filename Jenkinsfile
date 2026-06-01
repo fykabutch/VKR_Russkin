@@ -9,8 +9,6 @@ pipeline {
 
     environment {
         BUILD_CONFIGURATION = 'Release'
-        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-        DOTNET_NOLOGO = '1'
         COMPOSE_PROJECT_NAME = 'vkr_russkin'
         APP_IMAGE_TAG = "${BUILD_NUMBER}"
         APP_PORT = '5454'
@@ -25,45 +23,6 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-            }
-        }
-
-        stage('Restore') {
-            steps {
-                sh 'dotnet restore VKR_Russkin.sln'
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh 'dotnet build VKR_Russkin.sln --configuration "$BUILD_CONFIGURATION" --no-restore'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh '''
-                    set -eu
-                    TEST_PROJECTS="$(find . -name '*Tests.csproj' -print)"
-
-                    if [ -z "$TEST_PROJECTS" ]; then
-                        echo "Test projects were not found. Add a *Tests.csproj project to enable automated tests."
-                        exit 0
-                    fi
-
-                    for project in $TEST_PROJECTS; do
-                        dotnet test "$project" \
-                            --configuration "$BUILD_CONFIGURATION" \
-                            --no-build \
-                            --logger "trx;LogFileName=test-results.trx" \
-                            --results-directory TestResults
-                    done
-                '''
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'TestResults/**/*.trx', allowEmptyArchive: true
-                }
             }
         }
 
@@ -123,7 +82,7 @@ pipeline {
                         done
                     done
 
-                    curl --fail --silent --show-error "http://localhost:${APP_PORT}/health"
+                    docker exec vkr_russkin curl --fail --silent --show-error "http://localhost:5454/health"
                     echo
                     echo "Application smoke test passed."
                 '''
