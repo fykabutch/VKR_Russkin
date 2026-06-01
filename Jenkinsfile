@@ -14,6 +14,7 @@ pipeline {
         APP_PORT = '5454'
         MARIADB_DATABASE = 'vkr_russkin'
         MARIADB_USER = 'vkr_russkin'
+        MARIADB_BIND_ADDRESS = '0.0.0.0'
         MARIADB_PORT = '5456'
         MARIADB_PASSWORD = 'vkr_russkin_password'
         MARIADB_ROOT_PASSWORD = 'vkr_russkin_root_password'

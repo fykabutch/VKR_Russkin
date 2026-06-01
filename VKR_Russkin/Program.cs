@@ -353,16 +353,6 @@ static void EnsureApplicationSchema(WebApplication app)
 
 static void SeedReferenceDataFromSqlite(WebApplication app, TeploDBContext targetContext)
 {
-    if (targetContext.LRCs.Any()
-        && targetContext.KVoAs.Any()
-        && targetContext.DotMCs.Any()
-        && targetContext.RoughnessMaterials.Any()
-        && targetContext.RoughnessConditions.Any()
-        && targetContext.Roughnesses.Any())
-    {
-        return;
-    }
-
     var seedPath = app.Configuration["DatabaseSeed:SqlitePath"]
         ?? Path.Combine(app.Environment.ContentRootPath, "seed", "VKR_Russkin.db");
 
@@ -376,10 +366,7 @@ static void SeedReferenceDataFromSqlite(WebApplication app, TeploDBContext targe
     sourceConnection.Open();
 
     using var transaction = targetContext.Database.BeginTransaction();
-    if (!targetContext.LRCs.Any())
-    {
-        targetContext.LRCs.AddRange(ReadLrcs(sourceConnection));
-    }
+    var lrcIdMap = UpsertLrcs(targetContext, ReadLrcs(sourceConnection));
 
     if (!targetContext.KVoAs.Any())
     {
@@ -403,10 +390,7 @@ static void SeedReferenceDataFromSqlite(WebApplication app, TeploDBContext targe
 
     targetContext.SaveChanges();
 
-    if (!targetContext.ResistanceDataPoints.Any() && targetContext.LRCs.Any())
-    {
-        targetContext.ResistanceDataPoints.AddRange(ReadResistanceDataPoints(sourceConnection));
-    }
+    UpsertResistanceDataPoints(targetContext, ReadResistanceDataPoints(sourceConnection), lrcIdMap);
 
     if (!targetContext.Roughnesses.Any()
         && targetContext.RoughnessMaterials.Any()
@@ -417,6 +401,76 @@ static void SeedReferenceDataFromSqlite(WebApplication app, TeploDBContext targe
 
     targetContext.SaveChanges();
     transaction.Commit();
+}
+
+static Dictionary<int, int> UpsertLrcs(TeploDBContext targetContext, IReadOnlyCollection<LRC> sourceItems)
+{
+    var targetByName = targetContext.LRCs
+        .AsTracking()
+        .ToList()
+        .GroupBy(item => item.TypeofLR, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+    foreach (var sourceItem in sourceItems)
+    {
+        if (targetByName.TryGetValue(sourceItem.TypeofLR, out var targetItem))
+        {
+            targetItem.ValueofLR = sourceItem.ValueofLR;
+            targetItem.IsTabular = sourceItem.IsTabular;
+            continue;
+        }
+
+        targetItem = new LRC
+        {
+            TypeofLR = sourceItem.TypeofLR,
+            ValueofLR = sourceItem.ValueofLR,
+            IsTabular = sourceItem.IsTabular
+        };
+        targetContext.LRCs.Add(targetItem);
+        targetByName[sourceItem.TypeofLR] = targetItem;
+    }
+
+    targetContext.SaveChanges();
+
+    return sourceItems.ToDictionary(
+        sourceItem => sourceItem.Id,
+        sourceItem => targetByName[sourceItem.TypeofLR].Id);
+}
+
+static void UpsertResistanceDataPoints(
+    TeploDBContext targetContext,
+    IEnumerable<ResistanceDataPoint> sourcePoints,
+    IReadOnlyDictionary<int, int> lrcIdMap)
+{
+    var targetByKey = targetContext.ResistanceDataPoints
+        .AsTracking()
+        .ToList()
+        .ToDictionary(point => (point.ResistanceId, point.ParamX, point.ParamY));
+
+    foreach (var sourcePoint in sourcePoints)
+    {
+        if (!lrcIdMap.TryGetValue(sourcePoint.ResistanceId, out var targetResistanceId))
+        {
+            continue;
+        }
+
+        var key = (targetResistanceId, sourcePoint.ParamX, sourcePoint.ParamY);
+        if (targetByKey.TryGetValue(key, out var targetPoint))
+        {
+            targetPoint.ZetaValue = sourcePoint.ZetaValue;
+            continue;
+        }
+
+        targetPoint = new ResistanceDataPoint
+        {
+            ResistanceId = targetResistanceId,
+            ParamX = sourcePoint.ParamX,
+            ParamY = sourcePoint.ParamY,
+            ZetaValue = sourcePoint.ZetaValue
+        };
+        targetContext.ResistanceDataPoints.Add(targetPoint);
+        targetByKey[key] = targetPoint;
+    }
 }
 
 static List<LRC> ReadLrcs(SqliteConnection connection)

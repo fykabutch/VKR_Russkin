@@ -41,7 +41,7 @@ services:
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env or Jenkins credentials}
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD in .env or Jenkins credentials}
     ports:
-      - "127.0.0.1:${MARIADB_PORT:-5456}:3306"
+      - "${MARIADB_BIND_ADDRESS:-127.0.0.1}:${MARIADB_PORT:-5456}:3306"
     volumes:
       - vkr-russkin-mariadb-data:/var/lib/mysql
     healthcheck:
