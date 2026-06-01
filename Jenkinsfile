@@ -17,8 +17,8 @@ pipeline {
         MARIADB_DATABASE = 'vkr_russkin'
         MARIADB_USER = 'vkr_russkin'
         MARIADB_PORT = '5456'
-        MARIADB_PASSWORD = credentials('vkr-russkin-mariadb-password')
-        MARIADB_ROOT_PASSWORD = credentials('vkr-russkin-mariadb-root-password')
+        MARIADB_PASSWORD = 'vkr_russkin_password'
+        MARIADB_ROOT_PASSWORD = 'vkr_russkin_root_password'
     }
 
     stages {
@@ -133,10 +133,22 @@ pipeline {
 
     post {
         failure {
-            sh 'docker compose logs --tail=200 app db || true'
+            script {
+                if (env.WORKSPACE) {
+                    sh 'docker compose logs --tail=200 app db || true'
+                } else {
+                    echo 'Workspace is not available, skipping docker compose logs.'
+                }
+            }
         }
         always {
-            sh 'docker compose ps || true'
+            script {
+                if (env.WORKSPACE) {
+                    sh 'docker compose ps || true'
+                } else {
+                    echo 'Workspace is not available, skipping docker compose ps.'
+                }
+            }
         }
     }
 }
