@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using VKR_Russkin.Data;
 using VKR_Russkin.Models;
 
@@ -13,6 +14,10 @@ public class PressureCalculationService : IPressureCalculationService
 {
     private readonly TeploDBContext _context;
     private readonly ILogger<PressureCalculationService> _logger;
+
+    // These multidimensional diagrams are versioned with the calculation logic.
+    // The generic ResistanceDataPoints table stores only two-dimensional X/Y grids
+    // and cannot represent all diagram axes, regimes, and formula-specific factors.
     private static readonly double[] DiffuserDiagram52Alphas = [3, 4, 6, 8, 10, 12, 14, 16, 20, 30, 45, 60, 90, 120, 180];
     private static readonly double[] DiffuserDiagram52Ratios = [2, 4, 6, 10, 16];
     private static readonly double[] DiffuserDiagram52ReScales = [0.5, 1, 2, 4, 6];
@@ -157,6 +162,106 @@ public class PressureCalculationService : IPressureCalculationService
     private static readonly double[] TransitionContractionDiagram527LengthRatios = [1, 1.5, 2, 2.5, 3, 4, 5];
     private static readonly double[] TransitionContractionDiagram527C1Values = [0.002, 0.002, 0.002, 0.002, 0.0015, 0.001, 0];
 
+    public static object GetClientEngineeringDiagramData() =>
+        new
+        {
+            diffuser52 = new
+            {
+                alphas = DiffuserDiagram52Alphas,
+                ratios = DiffuserDiagram52Ratios,
+                reScales = DiffuserDiagram52ReScales,
+                values = DiffuserDiagram52Values.ToDictionary(
+                    pair => pair.Key.ToString("0.###", CultureInfo.InvariantCulture),
+                    pair => ToJaggedArray(pair.Value))
+            },
+            diffuser54 = new
+            {
+                alphas = DiffuserDiagram54Alphas,
+                ratios = DiffuserDiagram54Ratios,
+                reScales = DiffuserDiagram54ReScales,
+                values = DiffuserDiagram54Values.ToDictionary(
+                    profile => profile.Key.ToString("0.###", CultureInfo.InvariantCulture),
+                    profile => profile.Value.ToDictionary(
+                        pair => pair.Key.ToString("0.###", CultureInfo.InvariantCulture),
+                        pair => ToJaggedArray(pair.Value)))
+            },
+            contraction523 = new
+            {
+                alphas = ContractionDiagram523Alphas,
+                areaRatios = ContractionDiagram523AreaRatios,
+                values = ToJaggedArray(ContractionDiagram523Values)
+            },
+            bend61 = new
+            {
+                angles = BendDiagram61Angles,
+                a1Values = BendDiagram61A1Values,
+                radiusRatios = BendDiagram61RadiusRatios,
+                b1Values = BendDiagram61B1Values,
+                aspectRatios = BendDiagram61AspectRatios,
+                c1Values = BendDiagram61C1Values,
+                reScales = BendDiagram61KReScales,
+                kReValues = ToJaggedArray(BendDiagram61KReValues)
+            },
+            transitionContraction527 = new
+            {
+                reScales = TransitionContractionDiagram527ReScales,
+                deltaValues = TransitionContractionDiagram527DeltaValues,
+                lengthRatios = TransitionContractionDiagram527LengthRatios,
+                c1Values = TransitionContractionDiagram527C1Values
+            }
+        };
+
+    public static void ValidateEngineeringDiagramData()
+    {
+        ValidateAxis(DiffuserDiagram52Alphas, nameof(DiffuserDiagram52Alphas));
+        ValidateAxis(DiffuserDiagram52Ratios, nameof(DiffuserDiagram52Ratios));
+        ValidateAxis(DiffuserDiagram52ReScales, nameof(DiffuserDiagram52ReScales));
+        ValidateDictionaryMatrices(
+            DiffuserDiagram52Values,
+            DiffuserDiagram52Ratios,
+            DiffuserDiagram52ReScales.Length,
+            DiffuserDiagram52Alphas.Length,
+            nameof(DiffuserDiagram52Values));
+
+        ValidateAxis(DiffuserDiagram54Alphas, nameof(DiffuserDiagram54Alphas));
+        ValidateAxis(DiffuserDiagram54Ratios, nameof(DiffuserDiagram54Ratios));
+        ValidateAxis(DiffuserDiagram54ReScales, nameof(DiffuserDiagram54ReScales));
+        foreach (var profile in DiffuserDiagram54Values)
+        {
+            ValidateDictionaryMatrices(
+                profile.Value,
+                DiffuserDiagram54Ratios,
+                DiffuserDiagram54ReScales.Length,
+                DiffuserDiagram54Alphas.Length,
+                $"{nameof(DiffuserDiagram54Values)}[{profile.Key}]");
+        }
+
+        ValidateAxis(ContractionDiagram523Alphas, nameof(ContractionDiagram523Alphas));
+        ValidateAxis(ContractionDiagram523AreaRatios, nameof(ContractionDiagram523AreaRatios));
+        ValidateMatrix(
+            ContractionDiagram523Values,
+            ContractionDiagram523AreaRatios.Length,
+            ContractionDiagram523Alphas.Length,
+            nameof(ContractionDiagram523Values));
+
+        ValidatePairedAxes(BendDiagram61Angles, BendDiagram61A1Values, nameof(BendDiagram61Angles), nameof(BendDiagram61A1Values));
+        ValidatePairedAxes(BendDiagram61RadiusRatios, BendDiagram61B1Values, nameof(BendDiagram61RadiusRatios), nameof(BendDiagram61B1Values));
+        ValidatePairedAxes(BendDiagram61AspectRatios, BendDiagram61C1Values, nameof(BendDiagram61AspectRatios), nameof(BendDiagram61C1Values));
+        ValidateAxis(BendDiagram61KReScales, nameof(BendDiagram61KReScales));
+        ValidateMatrix(BendDiagram61KReValues, 3, BendDiagram61KReScales.Length, nameof(BendDiagram61KReValues));
+
+        ValidatePairedAxes(
+            TransitionContractionDiagram527ReScales,
+            TransitionContractionDiagram527DeltaValues,
+            nameof(TransitionContractionDiagram527ReScales),
+            nameof(TransitionContractionDiagram527DeltaValues));
+        ValidatePairedAxes(
+            TransitionContractionDiagram527LengthRatios,
+            TransitionContractionDiagram527C1Values,
+            nameof(TransitionContractionDiagram527LengthRatios),
+            nameof(TransitionContractionDiagram527C1Values));
+    }
+
     public PressureCalculationService(TeploDBContext context, ILogger<PressureCalculationService> logger)
     {
         _context = context;
@@ -220,7 +325,7 @@ public class PressureCalculationService : IPressureCalculationService
             var ambientAirDensity = CalculateAmbientAirDensity(
                 ResolveAmbientAirDensity(componentDensities),
                 model.AmbientAirTemperature ?? 20);
-            var routeHeightChange = model.Sections.Sum(section => section.HeightDelta);
+            var routeHeightChange = ResolveRouteHeightChange(model);
             var applyGeometricPressure = model.UseGeometricPressure && Math.Abs(routeHeightChange) >= 0.0001;
             double runningTemperature = model.TgasInitial;
 
@@ -306,8 +411,15 @@ public class PressureCalculationService : IPressureCalculationService
 
                 if (length > 0)
                 {
-                    averageTemperature = Math.Max(0, inletTemperature - sectionTemperatureLoss * length / 2.0);
-                    outletTemperature = Math.Max(0, inletTemperature - sectionTemperatureLoss * length);
+                    outletTemperature = inletTemperature - sectionTemperatureLoss * length;
+                    if (outletTemperature < 0)
+                    {
+                        return Fail(
+                            $"{title}: заданные длина и удельное снижение температуры дают температуру на выходе " +
+                            $"{outletTemperature:F1}°C. В используемой модели температура газа не должна опускаться ниже 0°C.");
+                    }
+
+                    averageTemperature = (inletTemperature + outletTemperature) / 2.0;
                 }
                 else
                 {
@@ -383,11 +495,7 @@ public class PressureCalculationService : IPressureCalculationService
                 }
 
                 var localLoss = zetaResolution.Value * localDynamicPressure;
-                var geometricLoss = CalculateGeometricPressureDrop(
-                    section.HeightDelta,
-                    gasDensity,
-                    ambientAirDensity,
-                    applyGeometricPressure);
+                var geometricLoss = 0.0;
                 var totalLoss = frictionLoss + localLoss + geometricLoss;
 
                 results.Add(new CalcResultsViewModel
@@ -428,7 +536,13 @@ public class PressureCalculationService : IPressureCalculationService
                 runningTemperature = outletTemperature;
             }
 
-            var summary = BuildSummary(results);
+            var routeGasDensity = CalculateRouteAverageGasDensity(results);
+            var routeGeometricLoss = CalculateGeometricPressureDrop(
+                routeHeightChange,
+                routeGasDensity,
+                ambientAirDensity,
+                applyGeometricPressure);
+            var summary = BuildSummary(results, routeHeightChange, routeGeometricLoss);
             var recommendations = BuildRecommendations(model, results, summary);
 
             if (Math.Abs(summary.GeometricLoss) > Math.Abs(summary.TotalPressureDrop) * 0.15)
@@ -590,6 +704,26 @@ public class PressureCalculationService : IPressureCalculationService
             ? 9.81 * height * (ambientAirDensity - gasDensity)
             : 9.81 * height * (gasDensity - ambientAirDensity);
     }
+
+    private static double ResolveRouteHeightChange(CalcViewModel model)
+    {
+        if (model.HeightDifference > 0.0001 && model.HeightDirection is "up" or "down")
+        {
+            return model.HeightDirection switch
+            {
+                "up" => model.HeightDifference,
+                "down" => -model.HeightDifference,
+                _ => 0
+            };
+        }
+
+        return model.Sections.Sum(section => section.HeightDelta);
+    }
+
+    private static double CalculateRouteAverageGasDensity(IReadOnlyCollection<CalcResultsViewModel> results) =>
+        results.Count == 0
+            ? 0
+            : results.Average(result => result.GasDensity);
 
     private static ResolutionResult ResolveRoughness(
         bool useCustomRoughness,
@@ -2023,6 +2157,91 @@ public class PressureCalculationService : IPressureCalculationService
         return lowerValue + ratio * (upperValue - lowerValue);
     }
 
+    private static double[][] ToJaggedArray(double[,] values)
+    {
+        var rows = values.GetLength(0);
+        var columns = values.GetLength(1);
+        var result = new double[rows][];
+
+        for (var row = 0; row < rows; row++)
+        {
+            result[row] = new double[columns];
+            for (var column = 0; column < columns; column++)
+            {
+                result[row][column] = values[row, column];
+            }
+        }
+
+        return result;
+    }
+
+    private static void ValidatePairedAxes(
+        double[] points,
+        double[] values,
+        string pointsName,
+        string valuesName)
+    {
+        ValidateAxis(points, pointsName);
+        if (points.Length != values.Length)
+        {
+            throw new InvalidOperationException(
+                $"Справочные массивы {pointsName} и {valuesName} имеют разную длину.");
+        }
+
+        if (values.Any(value => !double.IsFinite(value)))
+        {
+            throw new InvalidOperationException($"Справочный массив {valuesName} содержит некорректное число.");
+        }
+    }
+
+    private static void ValidateAxis(double[] values, string name)
+    {
+        if (values.Length == 0 ||
+            values.Any(value => !double.IsFinite(value)) ||
+            values.Zip(values.Skip(1), (left, right) => right > left).Any(isIncreasing => !isIncreasing))
+        {
+            throw new InvalidOperationException(
+                $"Справочная ось {name} должна содержать конечные значения в строго возрастающем порядке.");
+        }
+    }
+
+    private static void ValidateDictionaryMatrices(
+        IReadOnlyDictionary<double, double[,]> matrices,
+        IReadOnlyCollection<double> expectedKeys,
+        int expectedRows,
+        int expectedColumns,
+        string name)
+    {
+        if (matrices.Count != expectedKeys.Count ||
+            expectedKeys.Any(key => !matrices.ContainsKey(key)))
+        {
+            throw new InvalidOperationException($"Набор таблиц {name} не соответствует справочной оси.");
+        }
+
+        foreach (var matrix in matrices)
+        {
+            ValidateMatrix(matrix.Value, expectedRows, expectedColumns, $"{name}[{matrix.Key}]");
+        }
+    }
+
+    private static void ValidateMatrix(double[,] values, int expectedRows, int expectedColumns, string name)
+    {
+        if (values.GetLength(0) != expectedRows || values.GetLength(1) != expectedColumns)
+        {
+            throw new InvalidOperationException(
+                $"Таблица {name} имеет размер {values.GetLength(0)}x{values.GetLength(1)}, " +
+                $"ожидался {expectedRows}x{expectedColumns}.");
+        }
+
+        foreach (var value in values)
+        {
+            if (!double.IsFinite(value))
+            {
+                throw new InvalidOperationException($"Таблица {name} содержит некорректное число.");
+            }
+        }
+    }
+
     private static string ResolveDominantLoss(double frictionLoss, double localLoss, double geometricLoss)
     {
         var contributions = new Dictionary<string, double>
@@ -2053,17 +2272,20 @@ public class PressureCalculationService : IPressureCalculationService
             _ => "Круглое"
         };
 
-    private static CalculationSummaryViewModel BuildSummary(List<CalcResultsViewModel> results)
+    private static CalculationSummaryViewModel BuildSummary(
+        List<CalcResultsViewModel> results,
+        double routeHeightChange,
+        double routeGeometricLoss)
     {
-        var totalPressureDrop = results.Sum(x => x.TotalPressureDrop);
+        var sectionPressureDrop = results.Sum(x => x.TotalPressureDrop);
+        var totalPressureDrop = sectionPressureDrop + routeGeometricLoss;
         var frictionLoss = results.Sum(x => x.PressureDropFriction);
         var localLoss = results.Sum(x => x.PressureDropLocal);
-        var geometricLoss = results.Sum(x => x.GeometricPressureDrop);
+        var geometricLoss = routeGeometricLoss;
         var criticalSection = results.OrderByDescending(x => Math.Abs(x.TotalPressureDrop)).First();
         var avgVelocity = results.Count == 0 ? 0 : results.Average(x => x.FlowVelocity);
         var maxVelocity = results.Count == 0 ? 0 : results.Max(x => x.FlowVelocity);
         var totalLength = results.Sum(x => x.Length);
-        var height = results.Sum(x => x.HeightDelta);
 
         return new CalculationSummaryViewModel
         {
@@ -2072,7 +2294,7 @@ public class PressureCalculationService : IPressureCalculationService
             LocalLoss = localLoss,
             GeometricLoss = geometricLoss,
             TotalRouteLength = totalLength,
-            TotalHeightChange = height,
+            TotalHeightChange = routeHeightChange,
             AverageVelocity = avgVelocity,
             MaxVelocity = maxVelocity,
             AmbientAirDensity = results.FirstOrDefault()?.AmbientAirDensity ?? 1.293,

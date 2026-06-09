@@ -33,6 +33,7 @@ public class CalcViewModel : IValidatableObject
 
     public string CustomRoughnessUnit { get; set; } = "m";
 
+    [Range(0, 1000, ErrorMessage = "Перепад высоты должен быть в пределах 0-1000 м")]
     public double HeightDifference { get; set; }
 
     public string? HeightDirection { get; set; }

@@ -1,5 +1,6 @@
 @using Newtonsoft.Json
 @using System.Globalization
+@using VKR_Russkin.Services
 @model VKR_Russkin.Models.CalcViewModel
 @{
     ViewData["Title"] = "Главная";
@@ -18,6 +19,7 @@
         kinematicViscosityCatalog = Model.KinematicViscosityCatalog,
         localResistanceTypes = Model.LocalResistanceTypes,
         localResistanceCatalog = Model.LocalResistanceCatalog,
+        engineeringDiagrams = PressureCalculationService.GetClientEngineeringDiagramData(),
         useGeometricPressure = Model.UseGeometricPressure,
         routeHeightDelta,
         currentCalculationId = Model.CurrentCalculationId,
@@ -304,7 +306,7 @@
                             <div class="field">
                                 <label for="RouteHeightDelta">Перепад высоты H</label>
                                 <div class="unit-input-row">
-                                    <input id="RouteHeightDelta" class="form-control" type="number" step="0.1" value="@routeHeightDelta.ToString(CultureInfo.InvariantCulture)" data-val="false" />
+                                    <input id="RouteHeightDelta" class="form-control" type="text" inputmode="decimal" pattern="[+-]?[0-9]*[.,]?[0-9]*" value="@routeHeightDelta.ToString(CultureInfo.InvariantCulture)" data-val="false" />
                                     <select class="form-select unit-select" data-unit-for="RouteHeightDelta" data-current-unit="m">
                                         <option value="m">м</option>
                                         <option value="mm">мм</option>
@@ -371,7 +373,6 @@
                                     <th>λ / ζ</th>
                                     <th>ΔPтр, Па</th>
                                     <th>ΔPмс, Па</th>
-                                    <th>ΔPгеом, Па</th>
                                     <th>ΣΔP, Па</th>
                                     <th>Доминирующий фактор</th>
                                 </tr>

@@ -29,6 +29,7 @@ builder.Services.AddDbContext<TeploDBContext>(o =>
     o.UseSqlite(connectionString);
 });
 builder.Services.AddScoped<IPressureCalculationService, PressureCalculationService>();
+PressureCalculationService.ValidateEngineeringDiagramData();
 
 var app = builder.Build();
 
@@ -68,6 +69,7 @@ app.MapControllerRoute(
 
 EnsureApplicationSchema(app);
 EnsureGasReferenceData(app);
+ValidateReferenceData(app);
 
 app.Run();
 
@@ -98,8 +100,6 @@ static void EnsureApplicationSchema(WebApplication app)
         SeedReferenceDataFromSqlite(app, context);
         return;
     }
-
-    context.Database.ExecuteSqlRaw("DROP TABLE IF EXISTS Variants;");
 
     context.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS RoughnessMaterials (
@@ -630,4 +630,37 @@ static double? ReadNullableDouble(SqliteDataReader reader, int ordinal)
 static bool ReadBool(SqliteDataReader reader, int ordinal)
 {
     return !reader.IsDBNull(ordinal) && Convert.ToBoolean(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+}
+
+static void ValidateReferenceData(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var context = scope.ServiceProvider.GetRequiredService<TeploDBContext>();
+    var tabularResistances = context.LRCs
+        .Include(item => item.DataPoints)
+        .Where(item => item.IsTabular)
+        .AsNoTracking()
+        .ToList();
+
+    foreach (var resistance in tabularResistances)
+    {
+        var points = resistance.DataPoints;
+        var xCount = points.Select(point => point.ParamX).Distinct().Count();
+        var yCount = points.Select(point => point.ParamY).Distinct().Count();
+
+        if (points.Count == 0 || points.Count != xCount * yCount)
+        {
+            throw new InvalidOperationException(
+                $"Справочная таблица КМС «{resistance.TypeofLR}» пуста или содержит неполную расчетную сетку.");
+        }
+
+        if (points.Any(point =>
+                !double.IsFinite(point.ParamX) ||
+                !double.IsFinite(point.ParamY) ||
+                !double.IsFinite(point.ZetaValue)))
+        {
+            throw new InvalidOperationException(
+                $"Справочная таблица КМС «{resistance.TypeofLR}» содержит некорректное числовое значение.");
+        }
+    }
 }

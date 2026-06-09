@@ -61,104 +61,25 @@
   const kinematicViscosityCatalog = Array.isArray(config.kinematicViscosityCatalog) ? config.kinematicViscosityCatalog : [];
   const localResistanceTypes = Array.isArray(config.localResistanceTypes) ? config.localResistanceTypes : [];
   const localResistanceCatalog = config.localResistanceCatalog || {};
-  const diffuserDiagram52Alphas = [3, 4, 6, 8, 10, 12, 14, 16, 20, 30, 45, 60, 90, 120, 180];
-  const diffuserDiagram52Ratios = [2, 4, 6, 10, 16];
-  const diffuserDiagram52ReScales = [0.5, 1, 2, 4, 6];
-  const diffuserDiagram52Values = {
-    2: [
-      [0.148, 0.135, 0.121, 0.112, 0.107, 0.109, 0.120, 0.141, 0.191, 0.315, 0.331, 0.326, 0.315, 0.308, 0.298],
-      [0.120, 0.106, 0.090, 0.083, 0.080, 0.088, 0.102, 0.122, 0.196, 0.298, 0.297, 0.286, 0.283, 0.279, 0.276],
-      [0.093, 0.082, 0.070, 0.068, 0.062, 0.062, 0.063, 0.073, 0.120, 0.229, 0.279, 0.268, 0.268, 0.265, 0.263],
-      [0.079, 0.068, 0.056, 0.048, 0.048, 0.048, 0.051, 0.051, 0.068, 0.120, 0.271, 0.272, 0.272, 0.268, 0.268],
-      [0.079, 0.068, 0.056, 0.048, 0.048, 0.048, 0.051, 0.051, 0.068, 0.120, 0.271, 0.272, 0.272, 0.268, 0.268]
-    ],
-    4: [
-      [0.197, 0.180, 0.165, 0.151, 0.157, 0.174, 0.197, 0.225, 0.298, 0.461, 0.606, 0.680, 0.643, 0.630, 0.615],
-      [0.154, 0.141, 0.126, 0.119, 0.120, 0.131, 0.155, 0.183, 0.262, 0.479, 0.680, 0.628, 0.600, 0.593, 0.585],
-      [0.120, 0.112, 0.101, 0.096, 0.096, 0.107, 0.120, 0.146, 0.180, 0.360, 0.548, 0.586, 0.585, 0.580, 0.567],
-      [0.101, 0.091, 0.085, 0.079, 0.082, 0.090, 0.107, 0.124, 0.172, 0.292, 0.462, 0.562, 0.582, 0.577, 0.567],
-      [0.101, 0.091, 0.085, 0.089, 0.080, 0.107, 0.135, 0.169, 0.240, 0.382, 0.506, 0.560, 0.582, 0.577, 0.567]
-    ],
-    6: [
-      [0.182, 0.170, 0.168, 0.168, 0.179, 0.200, 0.240, 0.268, 0.330, 0.482, 0.655, 0.766, 0.742, 0.730, 0.722],
-      [0.153, 0.144, 0.131, 0.126, 0.132, 0.159, 0.193, 0.218, 0.286, 0.488, 0.680, 0.755, 0.731, 0.720, 0.707],
-      [0.129, 0.118, 0.109, 0.101, 0.101, 0.118, 0.151, 0.185, 0.280, 0.440, 0.895, 0.700, 0.710, 0.708, 0.690],
-      [0.106, 0.095, 0.090, 0.084, 0.087, 0.104, 0.151, 0.160, 0.224, 0.360, 0.588, 0.660, 0.696, 0.695, 0.680],
-      [0.092, 0.090, 0.080, 0.079, 0.080, 0.098, 0.137, 0.160, 0.286, 0.456, 0.600, 0.690, 0.707, 0.700, 0.695]
-    ],
-    10: [
-      [0.195, 0.181, 0.184, 0.190, 0.200, 0.227, 0.256, 0.290, 0.380, 0.585, 0.760, 0.800, 0.834, 0.840, 0.827],
-      [0.160, 0.156, 0.155, 0.156, 0.162, 0.184, 0.212, 0.240, 0.332, 0.572, 0.812, 0.800, 0.820, 0.820, 0.815],
-      [0.123, 0.120, 0.120, 0.123, 0.134, 0.151, 0.167, 0.195, 0.240, 0.426, 0.760, 0.800, 0.806, 0.807, 0.808],
-      [0.100, 0.097, 0.097, 0.100, 0.106, 0.128, 0.160, 0.195, 0.254, 0.407, 0.605, 0.735, 0.804, 0.805, 0.809],
-      [0.085, 0.084, 0.084, 0.085, 0.086, 0.114, 0.160, 0.212, 0.332, 0.520, 0.600, 0.760, 0.825, 0.840, 0.825]
-    ],
-    16: [
-      [0.179, 0.174, 0.176, 0.185, 0.196, 0.224, 0.270, 0.306, 0.378, 0.600, 0.840, 0.880, 0.880, 0.880, 0.880],
-      [0.148, 0.146, 0.147, 0.147, 0.151, 0.179, 0.233, 0.275, 0.340, 0.600, 0.840, 0.905, 0.877, 0.876, 0.876],
-      [0.118, 0.120, 0.120, 0.120, 0.120, 0.140, 0.176, 0.208, 0.280, 0.520, 0.760, 0.868, 0.868, 0.868, 0.868],
-      [0.102, 0.098, 0.095, 0.094, 0.095, 0.118, 0.160, 0.191, 0.264, 0.480, 0.700, 0.778, 0.847, 0.868, 0.869],
-      [0.094, 0.085, 0.084, 0.085, 0.094, 0.118, 0.160, 0.212, 0.342, 0.560, 0.720, 0.790, 0.853, 0.874, 0.886]
-    ]
-  };
-  const diffuserDiagram54Alphas = [4, 6, 8, 10, 12, 14, 16, 20, 30, 45, 60, 90, 120, 180];
-  const diffuserDiagram54Ratios = [2, 4, 6, 10];
-  const diffuserDiagram54ReScales = [0.5, 1, 2, 4];
-  const diffuserDiagram54Values = {
-    0: {
-      2: [
-        [0.140, 0.136, 0.135, 0.152, 0.175, 0.200, 0.235, 0.250, 0.300, 0.325, 0.326, 0.325, 0.320, 0.300],
-        [0.110, 0.110, 0.105, 0.130, 0.160, 0.185, 0.200, 0.230, 0.270, 0.300, 0.315, 0.310, 0.310, 0.300],
-        [0.095, 0.090, 0.095, 0.116, 0.150, 0.175, 0.180, 0.216, 0.250, 0.285, 0.310, 0.315, 0.325, 0.300],
-        [0.085, 0.085, 0.090, 0.112, 0.145, 0.175, 0.185, 0.220, 0.250, 0.285, 0.310, 0.315, 0.325, 0.310]
-      ],
-      4: [
-        [0.170, 0.185, 0.200, 0.245, 0.300, 0.335, 0.380, 0.450, 0.520, 0.580, 0.620, 0.640, 0.640, 0.640],
-        [0.145, 0.155, 0.180, 0.225, 0.280, 0.335, 0.360, 0.430, 0.500, 0.560, 0.605, 0.630, 0.630, 0.625],
-        [0.115, 0.135, 0.150, 0.200, 0.260, 0.335, 0.360, 0.430, 0.500, 0.560, 0.605, 0.630, 0.630, 0.625],
-        [0.106, 0.118, 0.130, 0.195, 0.260, 0.335, 0.360, 0.430, 0.500, 0.560, 0.605, 0.630, 0.630, 0.625]
-      ],
-      6: [
-        [0.185, 0.190, 0.205, 0.295, 0.370, 0.420, 0.460, 0.525, 0.625, 0.715, 0.775, 0.790, 0.790, 0.785],
-        [0.155, 0.165, 0.185, 0.250, 0.320, 0.380, 0.420, 0.485, 0.600, 0.695, 0.750, 0.775, 0.770, 0.760],
-        [0.130, 0.140, 0.165, 0.235, 0.320, 0.360, 0.420, 0.465, 0.580, 0.675, 0.720, 0.760, 0.760, 0.750],
-        [0.120, 0.125, 0.145, 0.230, 0.300, 0.360, 0.400, 0.465, 0.580, 0.675, 0.720, 0.760, 0.760, 0.750]
-      ],
-      10: [
-        [0.180, 0.195, 0.240, 0.300, 0.375, 0.430, 0.470, 0.530, 0.635, 0.750, 0.840, 0.890, 0.890, 0.880],
-        [0.160, 0.175, 0.205, 0.265, 0.340, 0.400, 0.440, 0.550, 0.615, 0.725, 0.815, 0.880, 0.880, 0.865],
-        [0.130, 0.155, 0.180, 0.240, 0.320, 0.370, 0.420, 0.490, 0.590, 0.700, 0.795, 0.870, 0.850, 0.860],
-        [0.120, 0.135, 0.160, 0.235, 0.320, 0.370, 0.420, 0.490, 0.590, 0.700, 0.795, 0.870, 0.850, 0.860]
-      ]
-    },
-    10: {
-      2: [
-        [0.200, 0.240, 0.280, 0.280, 0.298, 0.305, 0.315, 0.325, 0.340, 0.355, 0.355, 0.350, 0.340, 0.310],
-        [0.175, 0.200, 0.215, 0.235, 0.250, 0.260, 0.275, 0.290, 0.310, 0.330, 0.340, 0.340, 0.320, 0.310],
-        [0.140, 0.160, 0.180, 0.195, 0.210, 0.225, 0.240, 0.260, 0.280, 0.310, 0.320, 0.335, 0.320, 0.310],
-        [0.105, 0.125, 0.140, 0.160, 0.200, 0.195, 0.210, 0.235, 0.265, 0.300, 0.320, 0.335, 0.320, 0.310]
-      ],
-      4: [
-        [0.260, 0.320, 0.360, 0.400, 0.430, 0.455, 0.480, 0.510, 0.565, 0.610, 0.635, 0.655, 0.650, 0.640],
-        [0.220, 0.270, 0.320, 0.365, 0.400, 0.435, 0.460, 0.495, 0.550, 0.600, 0.630, 0.650, 0.650, 0.640],
-        [0.180, 0.230, 0.275, 0.320, 0.365, 0.400, 0.430, 0.470, 0.530, 0.590, 0.620, 0.650, 0.650, 0.640],
-        [0.130, 0.180, 0.220, 0.270, 0.320, 0.350, 0.380, 0.430, 0.500, 0.580, 0.620, 0.650, 0.650, 0.640]
-      ],
-      6: [
-        [0.310, 0.360, 0.400, 0.450, 0.490, 0.530, 0.560, 0.615, 0.685, 0.750, 0.775, 0.795, 0.785, 0.760],
-        [0.250, 0.305, 0.375, 0.405, 0.455, 0.500, 0.530, 0.580, 0.650, 0.720, 0.775, 0.780, 0.775, 0.760],
-        [0.190, 0.265, 0.305, 0.370, 0.420, 0.460, 0.495, 0.545, 0.635, 0.710, 0.745, 0.775, 0.775, 0.760],
-        [0.140, 0.205, 0.255, 0.320, 0.380, 0.425, 0.460, 0.520, 0.615, 0.695, 0.740, 0.770, 0.775, 0.760]
-      ],
-      10: [
-        [0.300, 0.360, 0.415, 0.470, 0.520, 0.570, 0.600, 0.670, 0.760, 0.850, 0.900, 0.960, 0.920, 0.880],
-        [0.240, 0.315, 0.370, 0.455, 0.490, 0.540, 0.580, 0.640, 0.730, 0.830, 0.880, 0.940, 0.910, 0.880],
-        [0.185, 0.265, 0.325, 0.400, 0.460, 0.515, 0.550, 0.610, 0.715, 0.810, 0.860, 0.930, 0.910, 0.880],
-        [0.130, 0.200, 0.270, 0.345, 0.400, 0.460, 0.500, 0.570, 0.680, 0.790, 0.855, 0.930, 0.910, 0.880]
-      ]
-    }
-  };
-  const contractionDiagram523Alphas = [3, 5, 10, 15, 40, 50, 60, 76, 90, 105, 120, 150, 180];
+  const engineeringDiagrams = config.engineeringDiagrams || {};
+  const diffuser52 = engineeringDiagrams.diffuser52 || {};
+  const diffuser54 = engineeringDiagrams.diffuser54 || {};
+  const contraction523 = engineeringDiagrams.contraction523 || {};
+  const bend61 = engineeringDiagrams.bend61 || {};
+  const transitionContraction527 = engineeringDiagrams.transitionContraction527 || {};
+
+  const diffuserDiagram52Alphas = diffuser52.alphas || [];
+  const diffuserDiagram52Ratios = diffuser52.ratios || [];
+  const diffuserDiagram52ReScales = diffuser52.reScales || [];
+  const diffuserDiagram52Values = diffuser52.values || {};
+  const diffuserDiagram54Alphas = diffuser54.alphas || [];
+  const diffuserDiagram54Ratios = diffuser54.ratios || [];
+  const diffuserDiagram54ReScales = diffuser54.reScales || [];
+  const diffuserDiagram54Values = diffuser54.values || {};
+  const contractionDiagram523Alphas = contraction523.alphas || [];
+  const contractionDiagram523AreaRatios = contraction523.areaRatios || [];
+  const contractionDiagram523Values = Object.fromEntries(
+    contractionDiagram523AreaRatios.map((ratio, index) => [ratio, contraction523.values?.[index] || []]));
   const contractionDiagram523DisplayAlphas = [
     { label: "3", min: 3, max: 3 },
     { label: "5", min: 5, max: 5 },
@@ -172,33 +93,21 @@
     { label: "150", min: 150, max: 150 },
     { label: "180", min: 180, max: 180 }
   ];
-  const contractionDiagram523AreaRatios = [0.10, 0.16, 0.25, 0.39, 0.45, 0.64];
   const contractionDiagram523DisplayAreaRatios = [0.64, 0.45, 0.39, 0.25, 0.16, 0.10];
-  const contractionDiagram523Values = {
-    0.10: [0.118, 0.093, 0.053, 0.050, 0.050, 0.079, 0.079, 0.142, 0.190, 0.237, 0.285, 0.367, 0.427],
-    0.16: [0.108, 0.084, 0.048, 0.044, 0.044, 0.074, 0.074, 0.136, 0.184, 0.232, 0.278, 0.362, 0.420],
-    0.25: [0.100, 0.071, 0.047, 0.044, 0.044, 0.068, 0.068, 0.127, 0.174, 0.220, 0.268, 0.352, 0.408],
-    0.39: [0.098, 0.070, 0.051, 0.046, 0.046, 0.064, 0.064, 0.110, 0.162, 0.210, 0.250, 0.319, 0.364],
-    0.45: [0.076, 0.064, 0.052, 0.050, 0.050, 0.072, 0.072, 0.104, 0.138, 0.170, 0.202, 0.246, 0.255],
-    0.64: [0.072, 0.067, 0.054, 0.040, 0.040, 0.058, 0.058, 0.076, 0.094, 0.112, 0.131, 0.167, 0.190]
-  };
-  const bendDiagram61Angles = [0, 20, 30, 45, 60, 75, 90, 110, 130, 150, 180];
-  const bendDiagram61A1Values = [0, 0.31, 0.45, 0.60, 0.78, 0.90, 1.00, 1.13, 1.20, 1.28, 1.40];
-  const bendDiagram61RadiusRatios = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.25, 1.5, 2, 4, 6, 8, 10, 20, 30, 40];
-  const bendDiagram61B1Values = [1.18, 0.77, 0.51, 0.37, 0.28, 0.21, 0.19, 0.17, 0.15, 0.11, 0.09, 0.07, 0.07, 0.05, 0.04, 0.03];
-  const bendDiagram61AspectRatios = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 7, 8];
-  const bendDiagram61C1Values = [1.30, 1.17, 1.09, 1.00, 0.90, 0.85, 0.85, 0.90, 0.95, 0.98, 1.00, 1.00];
-  const bendDiagram61KReScales = [0.1, 0.14, 0.2, 0.3, 0.4, 0.6, 0.8, 1, 1.4, 2, 3, 4];
-  const bendDiagram61KReValues = [
-    [1.40, 1.33, 1.26, 1.19, 1.14, 1.09, 1.06, 1.04, 1.00, 1.00, 1.00, 1.00],
-    [1.67, 1.58, 1.49, 1.40, 1.34, 1.26, 1.21, 1.19, 1.17, 1.14, 1.06, 1.00],
-    [2.00, 1.89, 1.77, 1.64, 1.56, 1.46, 1.38, 1.30, 1.15, 1.02, 1.00, 1.00]
-  ];
-  const transitionContractionDiagram527ReScales = [1, 2, 4, 6, 8, 10, 20, 40, 50];
-  const transitionContractionDiagram527DeltaValues = [0.272, 0.245, 0.201, 0.165, 0.135, 0.111, 0.041, 0.005, 0.002];
-  const transitionContractionDiagram527LengthRatios = [1, 1.5, 2, 2.5, 3, 4, 5];
-  const transitionContractionDiagram527C1Values = [0.002, 0.002, 0.002, 0.002, 0.0015, 0.001, 0];
+  const bendDiagram61Angles = bend61.angles || [];
+  const bendDiagram61A1Values = bend61.a1Values || [];
+  const bendDiagram61RadiusRatios = bend61.radiusRatios || [];
+  const bendDiagram61B1Values = bend61.b1Values || [];
+  const bendDiagram61AspectRatios = bend61.aspectRatios || [];
+  const bendDiagram61C1Values = bend61.c1Values || [];
+  const bendDiagram61KReScales = bend61.reScales || [];
+  const bendDiagram61KReValues = bend61.kReValues || [];
+  const transitionContractionDiagram527ReScales = transitionContraction527.reScales || [];
+  const transitionContractionDiagram527DeltaValues = transitionContraction527.deltaValues || [];
+  const transitionContractionDiagram527LengthRatios = transitionContraction527.lengthRatios || [];
+  const transitionContractionDiagram527C1Values = transitionContraction527.c1Values || [];
   const gasCompositionTolerance = 0.0005;
+  const maxRouteHeightDelta = 1000;
   const fieldUnitIds = [
     "TgasInitial",
     "TemperatureLossPerMeter",
@@ -459,6 +368,7 @@
     document.addEventListener("focusin", handleContextTooltipFocusIn);
     document.addEventListener("focusout", handleContextTooltipFocusOut);
     document.addEventListener("click", handleContextTooltipClick, true);
+    document.addEventListener("click", handleRemoveSelectedSectionClick);
     document.addEventListener("keydown", hideContextTooltipNow);
     document.addEventListener("teplo:auth-state", handleAuthStateChange);
     window.addEventListener("scroll", hideContextTooltipNow, true);
@@ -472,13 +382,15 @@
     elements.blockInspectorBody.addEventListener("change", handleInspectorInteraction);
     elements.blockInspectorBody.addEventListener("click", handleInspectorClick);
 
-    elements.removeSelectedBlockBtn.addEventListener("click", removeSelectedSection);
     elements.savePresetBtn.addEventListener("click", savePreset);
     elements.loadPresetBtn.addEventListener("click", loadPreset);
     elements.deletePresetBtn.addEventListener("click", deletePreset);
     elements.clearDraftBtn.addEventListener("click", clearDraft);
     if (elements.toggleGeometryPressureBtn) {
       elements.toggleGeometryPressureBtn.addEventListener("click", toggleGeometryPressureAnalysis);
+    }
+    if (elements.routeHeightDelta) {
+      elements.routeHeightDelta.addEventListener("blur", handleRouteHeightDeltaBlur);
     }
     if (elements.noticesList) {
       elements.noticesList.addEventListener("click", handleNoticeAction);
@@ -524,6 +436,9 @@
     }
 
     if (event.target.closest("#geometryPressurePanel")) {
+      if (event.target === elements.routeHeightDelta) {
+        normalizeRouteHeightDeltaInput(event.target, event.type === "change");
+      }
       updateAmbientAirDensity();
       updateHeightSummary();
       renderHiddenInputs();
@@ -620,6 +535,14 @@
     saveDraftSilently();
   }
 
+  function handleRouteHeightDeltaBlur(event) {
+    normalizeRouteHeightDeltaInput(event.target, true);
+    updateHeightSummary();
+    renderHiddenInputs();
+    saveDraftSilently();
+    schedulePreview();
+  }
+
   function handleFormClick(event) {
     const roughnessButton = event.target.closest("[data-open-roughness-table]");
     if (!roughnessButton) {
@@ -631,6 +554,15 @@
       ? getSelectedSection()
       : null;
     showRoughnessGuide(section);
+  }
+
+  function handleRemoveSelectedSectionClick(event) {
+    if (!event.target.closest("#removeSelectedBlockBtn")) {
+      return;
+    }
+
+    event.preventDefault();
+    removeSelectedSection();
   }
 
   function handleAuthStateChange(event) {
@@ -793,7 +725,7 @@
 
   function renderCanvas() {
     elements.routeCanvas.innerHTML = "";
-    elements.routeCountBadge.textContent = `${state.sections.length} блоков`;
+    elements.routeCountBadge.textContent = formatBlockCount(state.sections.length);
 
     if (state.sections.length === 0) {
       elements.routeCanvas.innerHTML = '<div class="route-empty-state">Перетащите блок из палитры на холст или нажмите на нужный тип элемента, чтобы начать построение трассы.</div>';
@@ -959,7 +891,6 @@
   function renderHiddenInputs() {
     syncConicalCollectorOutlets();
     elements.sectionInputsHost.innerHTML = "";
-    const routeHeightDelta = getRouteHeightDelta();
 
     addGlobalHiddenInputs();
 
@@ -984,7 +915,7 @@
       addHiddenInput(`Sections[${index}].TemperatureLossUnit`, getSectionUnit(section, "temperatureLossPerMeter"));
       addHiddenInput(`Sections[${index}].TurnAngle`, getSectionBaseValue(section, "turnAngle"));
       addHiddenInput(`Sections[${index}].TurnAngleUnit`, getSectionUnit(section, "turnAngle"));
-      addHiddenInput(`Sections[${index}].HeightDelta`, index === 0 ? formatNullable(routeHeightDelta) : "0");
+      addHiddenInput(`Sections[${index}].HeightDelta`, "0");
       addHiddenInput(`Sections[${index}].HeightDeltaUnit`, "m");
       addHiddenInput(`Sections[${index}].LocalResistanceType`, section.localResistanceType);
       addHiddenInput(`Sections[${index}].LocalResistanceParamX`, getLocalResistanceParamXForSubmit(section));
@@ -1119,7 +1050,6 @@
         `<td>${formatNumber(readProp(item, "lambda", "Lambda"), 4)} / ${formatNumber(readProp(item, "zeta", "Zeta"), 3)}</td>`,
         `<td>${formatNumber(readProp(item, "pressureDropFriction", "PressureDropFriction"), 1)}</td>`,
         `<td>${formatNumber(readProp(item, "pressureDropLocal", "PressureDropLocal"), 1)}</td>`,
-        `<td>${formatNumber(readProp(item, "geometricPressureDrop", "GeometricPressureDrop"), 1)}</td>`,
         `<td>${formatNumber(readProp(item, "totalPressureDrop", "TotalPressureDrop"), 1)}</td>`,
         `<td>${escapeHtml(readProp(item, "dominantLossType", "DominantLossType") || "—")}</td>`,
         "</tr>"
@@ -1270,6 +1200,53 @@
     return parseNumber(getBaseFieldValue("RouteHeightDelta"), 0) || 0;
   }
 
+  function normalizeRouteHeightDeltaInput(input, finalize) {
+    if (!input) {
+      return;
+    }
+
+    const sanitized = sanitizeSignedDecimalInput(input.value);
+    if (input.value !== sanitized) {
+      input.value = sanitized;
+    }
+
+    if (!finalize) {
+      return;
+    }
+
+    const parsed = parseNumber(input.value, null);
+    if (parsed != null) {
+      input.value = formatForInput(parsed);
+    }
+  }
+
+  function sanitizeSignedDecimalInput(value) {
+    const source = String(value || "").replace(",", ".").trim();
+    let result = "";
+    let sign = "";
+    let hasDecimalSeparator = false;
+
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index];
+      if ((char === "-" || char === "+") && !sign && result.length === 0) {
+        sign = char;
+        continue;
+      }
+
+      if (char === "." && !hasDecimalSeparator) {
+        result += char;
+        hasDecimalSeparator = true;
+        continue;
+      }
+
+      if (char >= "0" && char <= "9") {
+        result += char;
+      }
+    }
+
+    return `${sign}${result}`;
+  }
+
   function updateGeometryPressurePanel(totalHeight) {
     if (!elements.geometryPressureSummary || !elements.geometryPressureSignHint) {
       return;
@@ -1385,6 +1362,15 @@
 
     if (state.useGeometricPressure && calculateAmbientAirDensity() == null) {
       messages.push("Учет геометрического давления включен, но температура наружного воздуха задана некорректно.");
+    }
+
+    if (state.useGeometricPressure) {
+      const routeHeightValue = parseNumber(getFieldValue("RouteHeightDelta"), null);
+      if (routeHeightValue == null) {
+        messages.push("Учет геометрического давления включен, но перепад высоты H задан некорректно.");
+      } else if (Math.abs(getRouteHeightDelta()) > maxRouteHeightDelta) {
+        messages.push(`Перепад высоты H выходит за допустимый диапазон ±${maxRouteHeightDelta} м. Проверьте введенное значение.`);
+      }
     }
 
     state.sections.forEach((section, index) => {
@@ -1878,7 +1864,7 @@
           TemperatureLossUnit: getSectionUnit(section, "temperatureLossPerMeter"),
           TurnAngle: parseNumber(getSectionBaseValue(section, "turnAngle"), null),
           TurnAngleUnit: getSectionUnit(section, "turnAngle"),
-          HeightDelta: index === 0 ? totalHeight : 0,
+          HeightDelta: 0,
           HeightDeltaUnit: "m",
           LocalResistanceType: section.localResistanceType || null,
           LocalResistanceParamX: parseNumber(getLocalResistanceParamXForSubmit(section), null),
@@ -2135,6 +2121,17 @@
 
   function getSelectedSection() {
     return state.sections.find((section) => section.id === state.selectedId) || null;
+  }
+
+  function formatBlockCount(count) {
+    const lastTwoDigits = count % 100;
+    const lastDigit = count % 10;
+    const suffix = lastDigit === 1 && lastTwoDigits !== 11
+      ? "блок"
+      : lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14)
+        ? "блока"
+        : "блоков";
+    return `${count} ${suffix}`;
   }
 
   function getSectionTitle(section, fallbackNumber) {

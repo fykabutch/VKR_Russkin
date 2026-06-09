@@ -12,12 +12,7 @@ pipeline {
         COMPOSE_PROJECT_NAME = 'vkr_russkin'
         APP_IMAGE_TAG = "${BUILD_NUMBER}"
         APP_PORT = '5454'
-        MARIADB_DATABASE = 'vkr_russkin'
-        MARIADB_USER = 'vkr_russkin'
-        MARIADB_BIND_ADDRESS = '0.0.0.0'
-        MARIADB_PORT = '5456'
-        MARIADB_PASSWORD = 'vkr_russkin_password'
-        MARIADB_ROOT_PASSWORD = 'vkr_russkin_root_password'
+        DEPLOY_ENV_FILE = '/etc/vkr-russkin/deploy.env'
     }
 
     stages {
@@ -30,10 +25,12 @@ pipeline {
         stage('Validate Compose') {
             steps {
                 sh '''
-                    set +x
-                    : "${MARIADB_PASSWORD:?MARIADB_PASSWORD is required}"
-                    : "${MARIADB_ROOT_PASSWORD:?MARIADB_ROOT_PASSWORD is required}"
-                    docker compose config --quiet
+                    set -eu
+                    test -r "$DEPLOY_ENV_FILE" || {
+                        echo "Deployment environment file is not readable: $DEPLOY_ENV_FILE"
+                        exit 1
+                    }
+                    docker compose --env-file "$DEPLOY_ENV_FILE" config --quiet
                 '''
             }
         }
@@ -41,9 +38,9 @@ pipeline {
         stage('Build Images') {
             steps {
                 sh '''
-                    set +x
-                    docker compose pull db
-                    docker compose build --pull app
+                    set -eu
+                    docker compose --env-file "$DEPLOY_ENV_FILE" pull db
+                    docker compose --env-file "$DEPLOY_ENV_FILE" build --pull app
                 '''
             }
         }
@@ -51,9 +48,9 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                    set +x
-                    docker compose up -d --remove-orphans
-                    docker compose ps
+                    set -eu
+                    docker compose --env-file "$DEPLOY_ENV_FILE" up -d --remove-orphans
+                    docker compose --env-file "$DEPLOY_ENV_FILE" ps
                 '''
             }
         }
@@ -95,7 +92,7 @@ pipeline {
         failure {
             script {
                 if (env.WORKSPACE) {
-                    sh 'docker compose logs --tail=200 app db || true'
+                    sh 'docker compose --env-file "$DEPLOY_ENV_FILE" logs --tail=200 app db || true'
                 } else {
                     echo 'Workspace is not available, skipping docker compose logs.'
                 }
@@ -104,7 +101,7 @@ pipeline {
         always {
             script {
                 if (env.WORKSPACE) {
-                    sh 'docker compose ps || true'
+                    sh 'docker compose --env-file "$DEPLOY_ENV_FILE" ps || true'
                 } else {
                     echo 'Workspace is not available, skipping docker compose ps.'
                 }

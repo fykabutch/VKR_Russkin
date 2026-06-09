@@ -179,13 +179,13 @@ public class HomeController : Controller
 
         if (!preset.SavedCalculationId.HasValue)
         {
-            return NotFound(new { error = "РЈ Р·Р°РіРѕС‚РѕРІРєРё РЅРµС‚ СЃРІСЏР·Р°РЅРЅРѕРіРѕ СЂР°СЃС‡РµС‚Р°." });
+            return NotFound(new { error = "У заготовки нет связанного расчета." });
         }
 
         var model = LoadCalculationInput(user.Id, preset.SavedCalculationId.Value);
         if (model is null)
         {
-            return NotFound(new { error = "Р Р°СЃС‡РµС‚ РґР»СЏ Р·Р°РіРѕС‚РѕРІРєРё РЅРµ РЅР°Р№РґРµРЅ." });
+            return NotFound(new { error = "Расчет для заготовки не найден." });
         }
 
         PopulateCatalogs(model);
@@ -837,6 +837,11 @@ public class HomeController : Controller
             return "Пароль должен содержать не менее 6 символов.";
         }
 
+        if (request.Password.Length > 256)
+        {
+            return "Пароль должен быть не длиннее 256 символов.";
+        }
+
         return null;
     }
 
@@ -1152,7 +1157,9 @@ public class HomeController : Controller
     private CalcViewModel BuildModelFromCalculation(SavedCalculation calculation)
     {
         var input = calculation.Input ?? new SavedCalculationInput();
-        var totalHeight = calculation.Sections.Sum(section => section.HeightDelta);
+        var sectionHeight = calculation.Sections.Sum(section => section.HeightDelta);
+        var summaryHeight = calculation.Summary?.TotalHeightChange ?? 0;
+        var totalHeight = Math.Abs(summaryHeight) > 0.0001 ? summaryHeight : sectionHeight;
         var referenceAirDensity = input.AirDensityAtNormalConditions > 0
             ? input.AirDensityAtNormalConditions
             : 1.293;
@@ -1629,7 +1636,17 @@ public class HomeController : Controller
 
     private static void UpdateHeightSummary(CalcViewModel model)
     {
-        var totalHeight = model.Sections.Sum(x => x.HeightDelta);
+        var sectionHeight = model.Sections.Sum(x => x.HeightDelta);
+        var hasRouteHeight = model.HeightDifference > 0.0001 && model.HeightDirection is "up" or "down";
+        var totalHeight = hasRouteHeight
+            ? model.HeightDirection switch
+            {
+                "up" => model.HeightDifference,
+                "down" => -model.HeightDifference,
+                _ => 0
+            }
+            : sectionHeight;
+
         model.HeightDifference = Math.Abs(totalHeight);
         model.HeightDirection = totalHeight switch
         {

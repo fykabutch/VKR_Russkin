@@ -73,12 +73,31 @@
         return ToInvariant(centerX - barWidth / 2.0);
     }
 
+    string GetBarCenterX(int index) =>
+        ToInvariant(chartPaddingLeft + barStepWidth * index + barStepWidth / 2.0);
+
     string GetBarHeight(double value) => ToInvariant(Normalize(value, maxSectionLoss) * plotHeight);
     string GetBarY(double value)
     {
         var height = Normalize(value, maxSectionLoss) * plotHeight;
         return ToInvariant(chartPaddingTop + plotHeight - height);
     }
+
+    string GetBarLabelY(double value)
+    {
+        var height = Normalize(value, maxSectionLoss) * plotHeight;
+        var y = chartPaddingTop + plotHeight - height - 6;
+        return ToInvariant(Math.Max(chartPaddingTop + 12, y));
+    }
+
+    string GetCumulativeLabelY(double value)
+    {
+        var y = chartPaddingTop + plotHeight - Normalize(value, maxCumulativeLoss) * plotHeight - 10;
+        return ToInvariant(Math.Max(chartPaddingTop + 12, y));
+    }
+
+    string FormatChartValue(double value) =>
+        value.ToString("F1", CultureInfo.InvariantCulture);
 
     string GetCumulativePoint(int index, double value)
     {
@@ -749,7 +768,8 @@
                                   tabindex="0">
                                 <title>@BuildBlockLossTooltip(item, blockPressureDrop)</title>
                             </rect>
-                            @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft + barStepWidth * i + barStepWidth / 2.0)}\" y=\"{ToInvariant(chartPaddingTop + plotHeight + 18)}\" text-anchor=\"middle\">{item.SectionNumber}</text>")
+                            @Html.Raw($"<text class=\"chart-value-label print-only\" x=\"{GetBarCenterX(i)}\" y=\"{GetBarLabelY(blockPressureDrop)}\" text-anchor=\"middle\">{FormatChartValue(blockPressureDrop)}</text>")
+                            @Html.Raw($"<text x=\"{GetBarCenterX(i)}\" y=\"{ToInvariant(chartPaddingTop + plotHeight + 18)}\" text-anchor=\"middle\">{item.SectionNumber}</text>")
                         }
                         @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft)}\" y=\"{ToInvariant(chartPaddingTop - 2)}\">Па</text>")
                     </svg>
@@ -785,6 +805,7 @@
                                     tabindex="0">
                                 <title>@BuildCumulativeTooltip(rows[i].Result, rows[i].CumulativeLoss)</title>
                             </circle>
+                            @Html.Raw($"<text class=\"chart-value-label print-only\" x=\"{point[0]}\" y=\"{GetCumulativeLabelY(rows[i].CumulativeLoss)}\" text-anchor=\"middle\">{FormatChartValue(rows[i].CumulativeLoss)}</text>")
                             @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft + cumulativeStepWidth * i + cumulativeStepWidth / 2.0)}\" y=\"{ToInvariant(chartPaddingTop + plotHeight + 18)}\" text-anchor=\"middle\">{rows[i].Result.SectionNumber}</text>")
                         }
                         @if (hasGeometricPressure)
@@ -798,6 +819,7 @@
                                     tabindex="0">
                                 <title>@BuildGeometricTooltip()</title>
                             </circle>
+                            @Html.Raw($"<text class=\"chart-value-label print-only\" x=\"{geometricPoint[0]}\" y=\"{GetCumulativeLabelY(Model.Summary.TotalPressureDrop)}\" text-anchor=\"middle\">{FormatChartValue(Model.Summary.TotalPressureDrop)}</text>")
                             @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft + cumulativeStepWidth * rows.Count + cumulativeStepWidth / 2.0)}\" y=\"{ToInvariant(chartPaddingTop + plotHeight + 18)}\" text-anchor=\"middle\">Геом.</text>")
                         }
                         @Html.Raw($"<text x=\"{ToInvariant(chartPaddingLeft)}\" y=\"{ToInvariant(chartPaddingTop - 2)}\">Па</text>")
@@ -932,10 +954,6 @@
                                         <span>ΔPмс</span>
                                         <strong>@item.PressureDropLocal.ToString("F1")</strong>
                                     </span>
-                                    <span class="loss-metric">
-                                        <span>ΔPгеом</span>
-                                        <strong>@(Math.Abs(item.GeometricPressureDrop) > 0.0001 ? item.GeometricPressureDrop.ToString("F1") : "—")</strong>
-                                    </span>
                                     <span class="loss-metric is-total">
                                         <span>ΔP блока</span>
                                         <strong>@row.BlockPressureDrop.ToString("F1")</strong>
@@ -943,30 +961,6 @@
                                     <span class="loss-metric is-sum">
                                         <span>ΣΔP</span>
                                         <strong>@row.CumulativeLoss.ToString("F1")</strong>
-                                    </span>
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                    @if (hasGeometricPressure)
-                    {
-                        <tr class="geometric-summary-row">
-                            <td class="result-number">—</td>
-                            <td class="column-element result-name-cell" colspan="5">
-                                <strong>Геометрическое давление трассы</strong>
-                                <span class="result-cell-meta geometric-note-cell">
-                                    ΣΔH = @Model.Summary.TotalHeightChange.ToString("F2") м. Итоговая поправка учитывается в общем результате трассы.
-                                </span>
-                            </td>
-                            <td class="result-loss-cell">
-                                <div class="loss-metric-grid">
-                                    <span class="loss-metric">
-                                        <span>ΔPгеом</span>
-                                        <strong>@Model.Summary.GeometricLoss.ToString("F1")</strong>
-                                    </span>
-                                    <span class="loss-metric is-total">
-                                        <span>Итог</span>
-                                        <strong>@Model.Summary.TotalPressureDrop.ToString("F1")</strong>
                                     </span>
                                 </div>
                             </td>
